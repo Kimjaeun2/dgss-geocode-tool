@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>방제지리정보 주소 지오코딩 도구</title>
+<link rel="stylesheet" href="style.css">
+<!-- 엑셀 읽기/쓰기 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!--
+  카카오맵 JS SDK
+  ⚠️ 반드시 아래 KAKAO_JS_KEY 를 카카오 디벨로퍼스에서 발급받은 "JavaScript 키"로 교체하세요.
+  ⚠️ 카카오 디벨로퍼스 > 내 애플리케이션 > 플랫폼 > Web 플랫폼에 이 서버가 서비스될 도메인(예: http://172.x.x.x:8080)을 등록해야 동작합니다.
+-->
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=KAKAO_JS_KEY&libraries=services"></script>
+</head>
+<body>
+<header>
+  <h1>방제지리정보 주소 지오코딩 도구</h1>
+  <p class="sub">엑셀 업로드 → 카카오 주소 검색으로 좌표 자동 채움 → 실패 주소는 지도에서 직접 검색/보정 → 엑셀 다운로드</p>
+</header>
+
+<main>
+  <!-- 1단계: 파일 업로드 -->
+  <section class="card" id="step-upload">
+    <h2>1. 엑셀 업로드</h2>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div id="uploadStatus" class="status"></div>
+  </section>
+
+  <!-- 2단계: 시트/컬럼 매핑 -->
+  <section class="card hidden" id="step-mapping">
+    <h2>2. 시트 및 컬럼 지정</h2>
+    <div class="field">
+      <label>작업할 시트</label>
+      <select id="sheetSelect"></select>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>지번주소 컬럼 (우선 사용)</label>
+        <select id="colJibun"><option value="">(없음)</option></select>
+      </div>
+      <div class="field">
+        <label>도로명주소 컬럼 (지번주소 없을 때 사용)</label>
+        <select id="colRoad"><option value="">(없음)</option></select>
+      </div>
+      <div class="field">
+        <label>결과 X (경도) 컬럼</label>
+        <select id="colX"></select>
+      </div>
+      <div class="field">
+        <label>결과 Y (위도) 컬럼</label>
+        <select id="colY"></select>
+      </div>
+    </div>
+    <button id="startBtn">지오코딩 시작</button>
+  </section>
+
+  <!-- 3단계: 진행 상황 -->
+  <section class="card hidden" id="step-progress">
+    <h2>3. 진행 상황</h2>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div id="progressFill"></div></div>
+      <span id="progressText">0 / 0</span>
+    </div>
+    <div class="summary">
+      <span class="ok">성공: <b id="cntOk">0</b></span>
+      <span class="fail">실패: <b id="cntFail">0</b></span>
+    </div>
+  </section>
+
+  <!-- 4단계: 실패 목록 보정 -->
+  <section class="card hidden" id="step-fail">
+    <h2>4. 지오코딩 실패 주소 보정</h2>
+    <p class="hint">실패한 주소를 클릭하면 지도에서 자동 검색 결과가 나타납니다. 후보를 클릭하거나 지도를 직접 클릭해서 좌표를 지정하세요.</p>
+    <div class="fail-layout">
+      <ul id="failList" class="fail-list"></ul>
+      <div id="mapPanel" class="map-panel">
+        <div class="field">
+          <input type="text" id="searchBox" placeholder="키워드로 재검색">
+          <button id="searchBtn">검색</button>
+        </div>
+        <div id="map"></div>
+        <ul id="searchResults" class="search-results"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5단계: 다운로드 -->
+  <section class="card hidden" id="step-download">
+    <h2>5. 결과 다운로드</h2>
+    <p class="hint">모든 주소를 처리했거나, 남은 실패 건은 비워둔 채로 다운로드할 수 있습니다.</p>
+    <button id="downloadBtn">엑셀 다운로드</button>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
