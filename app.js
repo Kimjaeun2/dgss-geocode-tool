@@ -53,7 +53,7 @@ function loadSheet(name) {
 }
 
 function populateColumnSelects(header) {
-  const fillSelect = (id, withEmpty) => {
+  const fillSelect = (id, withEmpty, withNew) => {
     const sel = $(id);
     sel.innerHTML = withEmpty ? '<option value="">(없음)</option>' : '';
     header.forEach((h, i) => {
@@ -62,33 +62,65 @@ function populateColumnSelects(header) {
       opt.textContent = `${XLSX.utils.encode_col(i)} : ${h || '(제목없음)'}`;
       sel.appendChild(opt);
     });
+    if (withNew) {
+      const opt = document.createElement('option');
+      opt.value = '__new__';
+      opt.textContent = '+ 새 컬럼 추가 (직접 입력)';
+      sel.appendChild(opt);
+    }
   };
-  fillSelect('colJibun', true);
-  fillSelect('colRoad', true);
-  fillSelect('colX', false);
-  fillSelect('colY', false);
+  fillSelect('colJibun', true, false);
+  fillSelect('colRoad', true, false);
+  fillSelect('colX', false, true);
+  fillSelect('colY', false, true);
 
-  // 헤더 이름으로 자동 추정 매핑 (있으면 편의상 미리 선택해줌)
+  // 헤더 이름으로 자동 추정 매핑 (있으면 편의상 미리 선택해줌). 못 찾으면 새 컬럼 추가로 기본 유도.
+  const foundX = autoGuess(header, 'colX', ['x', 'X', '경도']);
+  const foundY = autoGuess(header, 'colY', ['y', 'Y', '위도']);
+  if (!foundX) { $('colX').value = '__new__'; $('colXNewName').value = 'X'; }
+  if (!foundY) { $('colY').value = '__new__'; $('colYNewName').value = 'Y'; }
   autoGuess(header, 'colJibun', ['지번주소', '지번']);
   autoGuess(header, 'colRoad', ['도로명주소', '도로명']);
-  autoGuess(header, 'colX', ['x', 'X', '경도']);
-  autoGuess(header, 'colY', ['y', 'Y', '위도']);
+
+  toggleNewColInput('colX', 'colXNewName');
+  toggleNewColInput('colY', 'colYNewName');
+}
+
+function toggleNewColInput(selectId, inputId) {
+  const sel = $(selectId);
+  const input = $(inputId);
+  const sync = () => {
+    if (sel.value === '__new__') input.classList.remove('hidden');
+    else input.classList.add('hidden');
+  };
+  sync();
+  sel.addEventListener('change', sync);
 }
 
 function autoGuess(header, selectId, keywords) {
   const idx = header.findIndex((h) => keywords.some((k) => String(h).includes(k)));
-  if (idx >= 0) $(selectId).value = String(idx);
+  if (idx >= 0) { $(selectId).value = String(idx); return true; }
+  return false;
 }
 
 // ====== 2단계: 지오코딩 시작 ======
 $('startBtn').addEventListener('click', async () => {
   colIdx.jibun = $('colJibun').value === '' ? -1 : parseInt($('colJibun').value, 10);
   colIdx.road = $('colRoad').value === '' ? -1 : parseInt($('colRoad').value, 10);
-  colIdx.x = parseInt($('colX').value, 10);
-  colIdx.y = parseInt($('colY').value, 10);
+
+  colIdx.x = resolveOutputColumn('colX', 'colXNewName');
+  colIdx.y = resolveOutputColumn('colY', 'colYNewName');
 
   if (colIdx.jibun === -1 && colIdx.road === -1) {
     alert('지번주소 또는 도로명주소 컬럼 중 하나는 선택해야 합니다.');
+    return;
+  }
+  if (colIdx.x === null || colIdx.y === null) {
+    alert('결과 X, Y 컬럼을 지정해주세요 (새 컬럼 추가 시 이름도 입력해야 합니다).');
+    return;
+  }
+  if (colIdx.x === colIdx.y) {
+    alert('X 컬럼과 Y 컬럼이 같은 컬럼으로 지정되었습니다. 다르게 지정해주세요.');
     return;
   }
 
@@ -129,6 +161,25 @@ $('startBtn').addEventListener('click', async () => {
     $('step-fail').querySelector('.hint').textContent = '모든 주소가 자동으로 지오코딩되었습니다.';
   }
 });
+
+// 결과 컬럼 select 값을 실제 컬럼 인덱스로 변환.
+// '__new__' 선택 시: 이름이 이미 헤더에 있으면 그 인덱스를 재사용하고,
+// 없으면 헤더 맨 뒤에 새 컬럼을 추가한다.
+function resolveOutputColumn(selectId, inputId) {
+  const val = $(selectId).value;
+  if (val !== '__new__') {
+    return val === '' ? null : parseInt(val, 10);
+  }
+  const name = $(inputId).value.trim();
+  if (!name) return null;
+
+  const header = aoa[0];
+  const existingIdx = header.findIndex((h) => String(h).trim() === name);
+  if (existingIdx >= 0) return existingIdx;
+
+  header.push(name);
+  return header.length - 1;
+}
 
 function getAddress(row) {
   const jibun = colIdx.jibun >= 0 ? String(row[colIdx.jibun] || '').trim() : '';
