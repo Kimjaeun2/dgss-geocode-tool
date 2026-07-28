@@ -7,17 +7,20 @@
 <link rel="stylesheet" href="style.css">
 <!-- 엑셀 읽기/쓰기 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- 좌표계 변환 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <!--
   카카오맵 JS SDK
-  ⚠️ 반드시 아래 KAKAO_JS_KEY 를 카카오 디벨로퍼스에서 발급받은 "JavaScript 키"로 교체하세요.
-  ⚠️ 카카오 디벨로퍼스 > 내 애플리케이션 > 플랫폼 > Web 플랫폼에 이 서버가 서비스될 도메인(예: http://172.x.x.x:8080)을 등록해야 동작합니다.
+  주의 1: appkey 를 카카오 디벨로퍼스에서 발급받은 "JavaScript 키"로 교체하세요.
+  주의 2: [앱 > 플랫폼 키 > JavaScript 키 > JavaScript SDK 도메인]에 서비스 주소를 등록해야 합니다.
+  주의 3: [제품 설정 > 카카오맵]이 활성화(ON)되어 있어야 합니다.
 -->
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=e15236035f91c232bbfe80eb5d65e417&libraries=services"></script>
 </head>
 <body>
 <header>
   <h1>방제지리정보 주소 지오코딩 도구</h1>
-  <p class="sub">엑셀 업로드 → 카카오 주소 검색으로 좌표 자동 채움 → 실패 주소는 지도에서 직접 검색/보정 → 엑셀 다운로드</p>
+  <p class="sub">엑셀 업로드 → 주소검색·장소검색 자동 지오코딩 → 남은 건은 지도에서 보정 → 엑셀 다운로드</p>
 </header>
 
 <main>
@@ -45,16 +48,36 @@
         <select id="colRoad"><option value="">(없음)</option></select>
       </div>
       <div class="field">
-        <label>결과 X (경도) 컬럼</label>
+        <label>결과 X 컬럼</label>
         <select id="colX"></select>
         <input type="text" id="colXNewName" class="hidden" placeholder="새 컬럼 이름 (예: X)">
       </div>
       <div class="field">
-        <label>결과 Y (위도) 컬럼</label>
+        <label>결과 Y 컬럼</label>
         <select id="colY"></select>
         <input type="text" id="colYNewName" class="hidden" placeholder="새 컬럼 이름 (예: Y)">
       </div>
     </div>
+  </section>
+
+  <!-- 2-1단계: 좌표계 확인 -->
+  <section class="card hidden" id="step-crs">
+    <h2>2-1. 좌표계 확인 <span class="badge-warn">중요</span></h2>
+    <p class="hint">
+      카카오는 WGS84 경위도를 반환하지만 기존 시트의 X/Y는 투영좌표계(미터)입니다.
+      잘못 고르면 신규 등록분만 수백 m 어긋나므로, 기존 좌표가 있는 행으로 자동 판정하는 것을 권장합니다.
+    </p>
+    <div class="grid2">
+      <div class="field">
+        <label>저장할 좌표계</label>
+        <select id="crsSelect"></select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button id="detectCrsBtn" class="secondary">기존 좌표로 자동 판정</button>
+      </div>
+    </div>
+    <div id="crsResult" class="crs-result"></div>
     <button id="startBtn">지오코딩 시작</button>
   </section>
 
@@ -64,17 +87,21 @@
     <div class="progress-wrap">
       <div class="progress-bar"><div id="progressFill"></div></div>
       <span id="progressText">0 / 0</span>
+      <button id="stopBtn" class="danger">중지</button>
     </div>
     <div class="summary">
-      <span class="ok">성공: <b id="cntOk">0</b></span>
-      <span class="fail">실패: <b id="cntFail">0</b></span>
+      <span class="ok">주소검색: <b id="cntOk">0</b></span>
+      <span class="place">장소검색: <b id="cntPlace">0</b></span>
+      <span class="skip">기존값 유지: <b id="cntSkip">0</b></span>
+      <span class="fail">미해결: <b id="cntFail">0</b></span>
     </div>
   </section>
 
-  <!-- 4단계: 실패 목록 보정 -->
+  <!-- 4단계: 미해결 건 보정 -->
   <section class="card hidden" id="step-fail">
-    <h2>4. 지오코딩 실패 주소 보정</h2>
-    <p class="hint">실패한 주소를 클릭하면 지도에서 자동 검색 결과가 나타납니다. 후보를 클릭하거나 지도를 직접 클릭해서 좌표를 지정하세요.</p>
+    <h2>4. 미해결 주소 보정 <span id="remainBadge" class="badge"></span></h2>
+    <p class="hint">항목을 클릭하면 지도에서 자동 검색됩니다. 후보를 클릭하거나 지도를 직접 클릭해 좌표를 지정하세요.</p>
+    <label class="checkbox"><input type="checkbox" id="onlyUnresolved"> 미해결만 보기</label>
     <div class="fail-layout">
       <ul id="failList" class="fail-list"></ul>
       <div id="mapPanel" class="map-panel">
@@ -91,7 +118,7 @@
   <!-- 5단계: 다운로드 -->
   <section class="card hidden" id="step-download">
     <h2>5. 결과 다운로드</h2>
-    <p class="hint">모든 주소를 처리했거나, 남은 실패 건은 비워둔 채로 다운로드할 수 있습니다.</p>
+    <p class="hint">남은 미해결 건은 좌표가 빈 채로 저장됩니다. 중간 저장도 가능합니다.</p>
     <button id="downloadBtn">엑셀 다운로드</button>
   </section>
 </main>
