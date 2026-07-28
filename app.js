@@ -112,6 +112,7 @@ function resetRun() {
   reviewList = [];
   activeIdx = -1;
   stopRequested = false;
+  geocodeCache.clear(); // 다시 실행할 때는 이전 실패 결과를 재사용하지 않고 새로 시도
   $('startBtn').disabled = false;
   $('step-progress').classList.add('hidden');
   $('step-fail').classList.add('hidden');
@@ -262,25 +263,47 @@ async function callKakaoWithRetry(method, query, tries = 3) {
 }
 
 /**
+ * 번지/건물번호가 전혀 없는 지명형 주소인지 판별.
+ * 예) '경기도 고양시 일산서구 한뫼공원주변', '... 멱절마을 한류천'
+ * 이런 주소는 주소검색이 100% 실패하므로 곧바로 장소검색으로 보낸다. (호출 1~2회 절약)
+ */
+function isLandmarkAddress(addr) {
+  const tail = addr.split(' ').pop() || '';
+  return !/\d/.test(tail);
+}
+
+// 같은 주소를 여러 행에서 쓰는 경우 API를 다시 부르지 않도록 결과를 캐시
+const geocodeCache = new Map();
+
+/**
  * 한 주소를 지오코딩한다.
- * 1) 주소검색(원본) -> 2) 주소검색(변형) -> 3) 장소검색
+ * 지명형: 장소검색만 시도
+ * 그 외 : 주소검색(원본) -> 주소검색(변형) -> 장소검색 폴백
  * 장소검색 결과가 1건이면 자동 채택, 여러 건이면 확인 대상으로 넘긴다.
  */
 async function geocodeAddress(addr) {
-  for (const v of addressVariants(addr)) {
-    const r = await callKakaoWithRetry('address', v);
-    if (r.state === 'ok') {
-      const t = r.data[0];
-      return {
-        status: 'ok',
-        method: v === addr ? '주소검색' : '주소검색(보정)',
-        lon: t.x, lat: t.y,
-        jibun: t.address ? t.address.address_name : '',
-        road: t.road_address ? t.road_address.address_name : '',
-        usedQuery: v,
-      };
+  if (geocodeCache.has(addr)) return geocodeCache.get(addr);
+  const result = await geocodeAddressUncached(addr);
+  geocodeCache.set(addr, result);
+  return result;
+}
+
+async function geocodeAddressUncached(addr) {
+  if (!isLandmarkAddress(addr)) {
+    for (const v of addressVariants(addr)) {
+      const r = await callKakaoWithRetry('address', v);
+      if (r.state === 'ok') {
+        const t = r.data[0];
+        return {
+          status: 'ok',
+          method: v === addr ? '주소검색' : '주소검색(보정)',
+          lon: t.x, lat: t.y,
+          jibun: t.address ? t.address.address_name : '',
+          road: t.road_address ? t.road_address.address_name : '',
+          usedQuery: v,
+        };
+      }
     }
-    await sleep(120);
   }
 
   // 주소검색으로 안 되는 지명형(공원/하천/마을 등)은 장소검색으로 폴백
@@ -298,7 +321,6 @@ async function geocodeAddress(addr) {
       }
       return { status: 'ambiguous', candidates: r.data, usedQuery: v };
     }
-    await sleep(120);
   }
   return { status: 'fail' };
 }
@@ -424,6 +446,7 @@ $('startBtn').addEventListener('click', async () => {
 
   stopRequested = false;
   reviewList = [];
+  geocodeCache.clear();
   $('startBtn').disabled = true;
   $('stopBtn').disabled = false;
   $('step-progress').classList.remove('hidden');
@@ -437,35 +460,50 @@ $('startBtn').addEventListener('click', async () => {
   const tick = () => updateProgress(done, total, ok, place, fail, skip);
   tick();
 
-  for (const rowIndex of targets) {
-    if (stopRequested) break;
-    const row = aoa[rowIndex];
-    const addr = getAddress(row);
+  // 여러 건을 동시에 처리한다. 워커들이 공유 큐(cursor)에서 하나씩 꺼내 가는 방식.
+  // JS는 단일 스레드라 카운터 증감에 경쟁 상태가 생기지 않는다.
+  const concurrency = parseInt($('concurrency').value, 10) || 6;
+  let cursor = 0;
 
-    // 이미 좌표가 "숫자로" 채워진 행은 건너뛴다 (주소 텍스트가 든 컬럼을 오인하지 않도록 숫자 검사)
-    if (isNum(row[colIdx.x]) && isNum(row[colIdx.y])) {
-      if (!row[colIdx.sojaeji]) row[colIdx.sojaeji] = addr;
-      if (!row[colIdx.method]) row[colIdx.method] = '기존값';
-      skip++; done++; tick();
-      continue;
+  async function worker() {
+    while (true) {
+      if (stopRequested) return;
+      const myIndex = cursor++;
+      if (myIndex >= targets.length) return;
+
+      const rowIndex = targets[myIndex];
+      const row = aoa[rowIndex];
+      const addr = getAddress(row);
+
+      // 이미 좌표가 "숫자로" 채워진 행은 건너뛴다 (주소 텍스트가 든 컬럼을 오인하지 않도록 숫자 검사)
+      if (isNum(row[colIdx.x]) && isNum(row[colIdx.y])) {
+        if (!row[colIdx.sojaeji]) row[colIdx.sojaeji] = addr;
+        if (!row[colIdx.method]) row[colIdx.method] = '기존값';
+        skip++; done++; tick();
+        continue;
+      }
+
+      row[colIdx.sojaeji] = addr;
+      const r = await geocodeAddress(addr);
+
+      if (r.status === 'ok') {
+        writeRow(row, Object.assign({}, r, { original: addr }));
+        if (r.method === '장소검색(자동)') place++; else ok++;
+      } else if (r.status === 'ambiguous') {
+        reviewList.push({ rowIndex, address: addr, candidates: r.candidates, resolved: false, reason: '후보 여러 건' });
+        fail++;
+      } else {
+        reviewList.push({ rowIndex, address: addr, candidates: null, resolved: false, reason: '검색 결과 없음' });
+        fail++;
+      }
+      done++; tick();
     }
-
-    row[colIdx.sojaeji] = addr;
-    const r = await geocodeAddress(addr);
-
-    if (r.status === 'ok') {
-      writeRow(row, Object.assign({}, r, { original: addr }));
-      if (r.method === '장소검색(자동)') place++; else ok++;
-    } else if (r.status === 'ambiguous') {
-      reviewList.push({ rowIndex, address: addr, candidates: r.candidates, resolved: false, reason: '후보 여러 건' });
-      fail++;
-    } else {
-      reviewList.push({ rowIndex, address: addr, candidates: null, resolved: false, reason: '검색 결과 없음' });
-      fail++;
-    }
-    done++; tick();
-    await sleep(120);
   }
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+
+  // 병렬 처리라 완료 순서가 뒤섞이므로 보정 목록을 원래 행 순서대로 정렬
+  reviewList.sort((a, b) => a.rowIndex - b.rowIndex);
 
   $('stopBtn').disabled = true;
   $('startBtn').disabled = false;

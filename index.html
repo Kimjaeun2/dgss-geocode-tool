@@ -78,6 +78,15 @@
       </div>
     </div>
     <div id="crsResult" class="crs-result"></div>
+    <div class="field" style="max-width:280px">
+      <label>동시 처리 수 (빠르지만 너무 높이면 오류가 늘 수 있음)</label>
+      <select id="concurrency">
+        <option value="1">1 (가장 안전, 느림)</option>
+        <option value="3">3</option>
+        <option value="6" selected>6 (권장)</option>
+        <option value="10">10 (가장 빠름)</option>
+      </select>
+    </div>
     <button id="startBtn">지오코딩 시작</button>
   </section>
 
