@@ -61,28 +61,6 @@ function normalizeAddress(s) {
     .trim();
 }
 
-/** 주소검색 실패 시 순차적으로 시도할 변형들 */
-function addressVariants(addr) {
-  const out = [addr];
-  const push = (v) => { const t = normalizeAddress(v); if (t && !out.includes(t)) out.push(t); };
-  // '가좌로128' -> '가좌로 128' (한글 뒤에 숫자가 바로 붙은 경우 공백 삽입)
-  push(addr.replace(/([가-힣])(\d)/g, '$1 $2'));
-  // 괄호 안 부가정보 제거
-  push(addr.replace(/\([^)]*\)/g, ''));
-  return out;
-}
-
-/** 장소검색용 키워드 변형: '한뫼공원주변' -> '한뫼공원' 처럼 위치 접미어 제거 */
-function keywordVariants(addr) {
-  const out = [addr];
-  const push = (v) => { const t = normalizeAddress(v); if (t && !out.includes(t)) out.push(t); };
-  push(addr.replace(/\s*(주변|일대|인근|부근|옆|앞|뒤)\s*$/, ''));
-  // 시도/시군구 접두어를 떼고 마지막 지명만 (예: '경기도 고양시 일산서구 한뫼공원' -> '고양시 한뫼공원')
-  const parts = addr.split(' ');
-  if (parts.length >= 3) push(parts.slice(-2).join(' '));
-  return out;
-}
-
 // ====== 1단계: 파일 업로드 ======
 $('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -262,16 +240,6 @@ async function callKakaoWithRetry(method, query, tries = 3) {
   return { state: 'error' };
 }
 
-/**
- * 번지/건물번호가 전혀 없는 지명형 주소인지 판별.
- * 예) '경기도 고양시 일산서구 한뫼공원주변', '... 멱절마을 한류천'
- * 이런 주소는 주소검색이 100% 실패하므로 곧바로 장소검색으로 보낸다. (호출 1~2회 절약)
- */
-function isLandmarkAddress(addr) {
-  const tail = addr.split(' ').pop() || '';
-  return !/\d/.test(tail);
-}
-
 // 같은 주소를 여러 행에서 쓰는 경우 API를 다시 부르지 않도록 결과를 캐시
 const geocodeCache = new Map();
 
@@ -289,8 +257,12 @@ async function geocodeAddress(addr) {
 }
 
 async function geocodeAddressUncached(addr) {
-  if (!isLandmarkAddress(addr)) {
-    for (const v of addressVariants(addr)) {
+  const parsed = Addr.parse(addr);
+  const outside = [];
+
+  // --- 주소검색 경로 ---
+  if (Addr.route(parsed) === 'address') {
+    for (const v of Addr.addressVariants(addr)) {
       const r = await callKakaoWithRetry('address', v);
       if (r.state === 'ok') {
         const t = r.data[0];
@@ -306,23 +278,42 @@ async function geocodeAddressUncached(addr) {
     }
   }
 
-  // 주소검색으로 안 되는 지명형(공원/하천/마을 등)은 장소검색으로 폴백
-  for (const v of keywordVariants(addr)) {
+  // --- 장소검색 경로 ---
+  // 주소검색 경로였다가 전부 실패한 경우에도 원본 문자열로 한 번 더 시도한다.
+  const keywords = Addr.keywordCandidates(parsed);
+  const queries = keywords.length ? keywords : [Addr.normalize(addr)];
+
+  for (const v of queries) {
     const r = await callKakaoWithRetry('place', v);
-    if (r.state === 'ok') {
-      if (r.data.length === 1) {
-        const p = r.data[0];
-        return {
-          status: 'ok', method: '장소검색(자동)',
-          lon: p.x, lat: p.y,
-          jibun: p.address_name || '', road: p.road_address_name || '',
-          usedQuery: v,
-        };
-      }
-      return { status: 'ambiguous', candidates: r.data, usedQuery: v };
+    if (r.state !== 'ok') continue;
+
+    const inside = [];
+    for (const p of r.data) {
+      const verdict = Gate.check(p.address_name, parsed.sgg);
+      if (verdict === 'out') outside.push(p);
+      else inside.push(p);   // 'in' 과 'skip' 은 후보로 인정한다
     }
+
+    if (inside.length === 1) {
+      const p = inside[0];
+      return {
+        status: 'ok', method: '장소검색(자동)',
+        lon: p.x, lat: p.y,
+        jibun: p.address_name || '', road: p.road_address_name || '',
+        usedQuery: v,
+      };
+    }
+    if (inside.length > 1) {
+      return { status: 'ambiguous', candidates: inside, outside: outside, usedQuery: v };
+    }
+    // inside 가 0건이면 다음 키워드 후보로 넘어간다
   }
-  return { status: 'fail' };
+
+  return {
+    status: 'fail',
+    outside: outside,
+    reason: outside.length ? '관할 내 결과 없음' : '검색 결과 없음',
+  };
 }
 
 // ====== 좌표계 자동 판정 ======
@@ -490,10 +481,16 @@ $('startBtn').addEventListener('click', async () => {
         writeRow(row, Object.assign({}, r, { original: addr }));
         if (r.method === '장소검색(자동)') place++; else ok++;
       } else if (r.status === 'ambiguous') {
-        reviewList.push({ rowIndex, address: addr, candidates: r.candidates, resolved: false, reason: '후보 여러 건' });
+        reviewList.push({
+          rowIndex, address: addr, candidates: r.candidates,
+          outside: r.outside || [], resolved: false, reason: '후보 여러 건',
+        });
         fail++;
       } else {
-        reviewList.push({ rowIndex, address: addr, candidates: null, resolved: false, reason: '검색 결과 없음' });
+        reviewList.push({
+          rowIndex, address: addr, candidates: null,
+          outside: r.outside || [], resolved: false, reason: r.reason || '검색 결과 없음',
+        });
         fail++;
       }
       done++; tick();
@@ -540,7 +537,9 @@ function renderFailList() {
     const li = document.createElement('li');
     li.className = item.resolved ? 'resolved' : '';
     if (idx === activeIdx) li.classList.add('active');
-    li.innerHTML = `<span class="addr"></span><span class="reason">${item.reason}</span>`;
+    const outsideCount = (item.outside || []).length;
+    const outsideBadge = outsideCount ? `<span class="badge-outside">관할 밖 ${outsideCount}</span>` : '';
+    li.innerHTML = `<span class="addr"></span><span class="reason">${item.reason}</span>${outsideBadge}`;
     li.querySelector('.addr').textContent = item.address; // XSS 방지: 주소는 textContent 로
     li.onclick = () => selectItem(idx);
     ul.appendChild(li);
@@ -562,7 +561,8 @@ function selectItem(idx) {
   $('searchBox').value = item.address;
 
   // 배치 단계에서 이미 후보를 받아둔 경우 API를 다시 부르지 않고 그대로 보여준다.
-  if (item.candidates) showCandidates(item.candidates, item.address);
+  if (item.candidates) showCandidates(item.candidates, item.address, item.outside);
+  else if (item.outside && item.outside.length) showCandidates([], item.address, item.outside);
   else runKeywordSearch(item.address);
 }
 
@@ -612,24 +612,30 @@ function showMessage(msg) {
   ul.appendChild(li);
 }
 
-function showCandidates(data, keyword) {
+function showCandidates(data, keyword, outside) {
   const ul = $('searchResults');
   ul.innerHTML = '';
+  outside = outside || [];
 
-  const apply = (p) => {
+  const apply = (p, isOutside) => {
     map.setCenter(new kakao.maps.LatLng(p.y, p.x));
     map.setLevel(3);
     saveCoord(p.x, p.y, {
       jibun: p.address_name || '', road: p.road_address_name || '', usedQuery: keyword,
-    }, data.length === 1 ? '장소검색(자동)' : '장소검색(선택)');
+    }, isOutside ? '장소검색(관할밖선택)' : '장소검색(선택)');
   };
 
-  if (data.length === 1) {
-    // 결과가 1건이면 바로 채택
-    apply(data[0]);
+  // 관할 내 후보가 정확히 1건이고 관할 밖 후보가 없으면 기존처럼 바로 채택한다.
+  if (data.length === 1 && outside.length === 0) {
+    const p = data[0];
+    map.setCenter(new kakao.maps.LatLng(p.y, p.x));
+    map.setLevel(3);
+    saveCoord(p.x, p.y, {
+      jibun: p.address_name || '', road: p.road_address_name || '', usedQuery: keyword,
+    }, '장소검색(자동)');
     const li = document.createElement('li');
     li.className = 'auto-picked';
-    li.textContent = `자동 선택됨: ${data[0].place_name} - ${data[0].road_address_name || data[0].address_name}`;
+    li.textContent = `자동 선택됨: ${p.place_name} - ${p.road_address_name || p.address_name}`;
     ul.appendChild(li);
     return;
   }
@@ -637,10 +643,28 @@ function showCandidates(data, keyword) {
   data.forEach((p) => {
     const li = document.createElement('li');
     li.textContent = `${p.place_name} - ${p.road_address_name || p.address_name}`;
-    li.onclick = () => apply(p);
+    li.onclick = () => apply(p, false);
     ul.appendChild(li);
   });
-  map.setCenter(new kakao.maps.LatLng(data[0].y, data[0].x));
+
+  // 관할 밖 후보는 구분선 아래에 따로 보여준다. 버리지 않되 눈에 띄게 구분한다.
+  if (outside.length) {
+    const head = document.createElement('li');
+    head.className = 'outside-head';
+    head.textContent = `── 관할 밖 후보 ${outside.length}건 (다른 시·군·구)`;
+    ul.appendChild(head);
+
+    outside.forEach((p) => {
+      const li = document.createElement('li');
+      li.className = 'outside-item';
+      li.textContent = `${p.place_name} - ${p.road_address_name || p.address_name}`;
+      li.onclick = () => apply(p, true);
+      ul.appendChild(li);
+    });
+  }
+
+  const first = data[0] || outside[0];
+  if (first) map.setCenter(new kakao.maps.LatLng(first.y, first.x));
 }
 
 /** 지도/후보에서 확정한 좌표를 해당 행에 기록 */

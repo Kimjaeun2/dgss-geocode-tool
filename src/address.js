@@ -89,5 +89,52 @@
     return out;
   }
 
-  global.Addr = { normalize: normalize, parse: parse };
+  /** 파싱 결과로 검색 경로를 정한다. 지명(rest)이 남아 있으면 장소검색이다. */
+  function route(parsed) {
+    return parsed && parsed.rest ? 'place' : 'address';
+  }
+
+  /** 배열에 정규화한 값을 중복 없이 넣는다. */
+  function pushUniq(arr, value) {
+    var v = normalize(value);
+    if (v && arr.indexOf(v) === -1) arr.push(v);
+  }
+
+  /**
+   * 주소검색용 변형을 만든다. 원본 · 숫자분리 · 괄호제거 · 둘 다 적용.
+   * 기존 구현은 변형을 조합하지 않아 '숫자분리 + 괄호제거'가 누락되어 있었다.
+   */
+  function addressVariants(addr) {
+    var base = normalize(addr);
+    var spaced = base.replace(/([가-힣])(\d)/g, '$1 $2');
+    var stripParen = function (s) { return s.replace(/\([^)]*\)/g, ''); };
+
+    var out = [];
+    pushUniq(out, base);
+    pushUniq(out, spaced);
+    pushUniq(out, stripParen(base));
+    pushUniq(out, stripParen(spaced));
+    return out;
+  }
+
+  /**
+   * 장소검색용 키워드 후보를 넓은 순서로 만든다.
+   * 접미어가 제거된 rest 를 기준으로 조립하므로 조합 누락이 없다.
+   */
+  function keywordCandidates(parsed) {
+    if (!parsed || !parsed.rest) return [];
+    var out = [];
+    if (parsed.sgg && parsed.emd) pushUniq(out, parsed.sgg + ' ' + parsed.emd + ' ' + parsed.rest);
+    if (parsed.sgg) pushUniq(out, parsed.sgg + ' ' + parsed.rest);
+    pushUniq(out, parsed.rest);
+    return out;
+  }
+
+  global.Addr = {
+    normalize: normalize,
+    parse: parse,
+    route: route,
+    addressVariants: addressVariants,
+    keywordCandidates: keywordCandidates
+  };
 })(window);
