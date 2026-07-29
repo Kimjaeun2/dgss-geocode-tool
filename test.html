@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>지오코딩 도구 테스트</title>
+<style>
+  body { font-family: Consolas, monospace; padding: 20px; line-height: 1.6; }
+  #summary { font-size: 20px; font-weight: bold; margin-bottom: 16px; padding: 12px;
+             border-radius: 6px; }
+  #summary.ok  { background: #e8f5e9; color: #1b5e20; }
+  #summary.bad { background: #ffebee; color: #b71c1c; }
+  ul { list-style: none; padding: 0; }
+  li { padding: 3px 0; }
+  .pass { color: #2e7d32; }
+  .fail { color: #c62828; font-weight: bold; }
+  .detail { color: #555; margin-left: 24px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="summary">실행 중...</div>
+<ul id="results"></ul>
+
+<script>
+/* 최소 테스트 하네스. 러너·설치 없이 이 파일을 브라우저로 열면 실행된다. */
+var __passed = 0, __failed = 0;
+
+function __show(cls, text, detail) {
+  var li = document.createElement('li');
+  li.className = cls;
+  li.textContent = text;
+  document.getElementById('results').appendChild(li);
+  if (detail) {
+    var d = document.createElement('li');
+    d.className = 'detail';
+    d.textContent = detail;
+    document.getElementById('results').appendChild(d);
+  }
+}
+
+/** 깊은 비교. 객체·배열은 JSON 직렬화로 비교한다. */
+function eq(actual, expected, label) {
+  var a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) { __passed++; __show('pass', 'PASS  ' + label); }
+  else { __failed++; __show('fail', 'FAIL  ' + label, '기대: ' + e + '  /  실제: ' + a); }
+}
+
+/** 배열이 특정 값을 포함하는지 검사한다. */
+function contains(arr, value, label) {
+  if (arr && arr.indexOf(value) !== -1) { __passed++; __show('pass', 'PASS  ' + label); }
+  else {
+    __failed++;
+    __show('fail', 'FAIL  ' + label, '포함되어야 함: ' + JSON.stringify(value) +
+           '  /  실제 배열: ' + JSON.stringify(arr));
+  }
+}
+
+function test(name, fn) {
+  __show('', '── ' + name);
+  try { fn(); }
+  catch (err) { __failed++; __show('fail', 'FAIL  ' + name + ' (예외)', String(err)); }
+}
+
+function __finish() {
+  var el = document.getElementById('summary');
+  el.className = __failed === 0 ? 'ok' : 'bad';
+  el.textContent = __failed === 0
+    ? '전체 통과 — ' + __passed + '건'
+    : '실패 ' + __failed + '건 / 통과 ' + __passed + '건';
+}
+</script>
+
+<!-- 검사 대상 모듈 -->
+<script src="src/address.js"></script>
+
+<!-- 테스트 케이스 -->
+<script src="tests/address.test.js"></script>
+
+<script>__finish();</script>
+</body>
+</html>
