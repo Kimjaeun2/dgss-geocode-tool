@@ -117,3 +117,28 @@ button.danger:hover { background: #a51111; }
   background: #fff8f0;
   color: #8d4b00;
 }
+.search-results li.auto-picked:hover { background: #ebfbee; }
+
+/* 관할 밖 후보 표시 */
+.badge-outside {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #fff3e0;
+  color: #e65100;
+  font-size: 11px;
+  font-weight: bold;
+}
+.search-results .outside-head {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ccc;
+  color: #e65100;
+  font-size: 12px;
+  cursor: default;
+}
+.search-results .outside-item {
+  background: #fff8f0;
+  color: #8d4b00;
+}
