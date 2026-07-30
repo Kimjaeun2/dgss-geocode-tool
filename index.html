@@ -19,6 +19,7 @@
 <!-- 주소 파싱 · 지역 게이트 (순수 모듈, test.html 로 검증됨) -->
 <script src="src/address.js"></script>
 <script src="src/gate.js"></script>
+<script src="src/dictionary.js"></script>
 <!--
   VWorld Open API 키
   주의 1: https://www.vworld.kr 에서 발급받은 인증키로 아래 값을 교체하세요.
@@ -49,8 +50,10 @@
   <section class="card hidden" id="step-mapping">
     <h2>2. 시트 및 컬럼 지정</h2>
     <div class="field">
-      <label>작업할 시트</label>
-      <select id="sheetSelect"></select>
+      <label>처리할 시트 (여러 개 선택 가능 — 검수는 한 화면에서 한꺼번에 합니다)</label>
+      <label class="checkbox"><input type="checkbox" id="sheetAll"> 전체 선택 / 해제</label>
+      <div id="sheetList" class="sheet-list"></div>
+      <div id="sheetMapNote" class="status"></div>
     </div>
     <div class="grid2">
       <div class="field">
@@ -72,6 +75,17 @@
         <input type="text" id="colYNewName" class="hidden" placeholder="새 컬럼 이름 (예: Y)">
       </div>
     </div>
+  </section>
+
+  <!-- 2-2단계: 대체주소 사전 -->
+  <section class="card hidden" id="step-dict">
+    <h2>2-2. 대체주소 사전 <span class="badge">선택</span></h2>
+    <p class="hint">
+      지난번 작업에서 내려받은 사전 엑셀을 올리면, 그때 확정한 지명형 주소는
+      API 호출 없이 바로 채워집니다. 처음이라면 그냥 넘어가세요.
+    </p>
+    <input type="file" id="dictInput" accept=".xlsx,.xls">
+    <div id="dictStatus" class="status"></div>
   </section>
 
   <!-- 2-1단계: 좌표계 확인 -->
@@ -115,9 +129,11 @@
     <div class="summary">
       <span class="ok">주소검색: <b id="cntOk">0</b></span>
       <span class="place">장소검색: <b id="cntPlace">0</b></span>
+      <span class="dict">사전: <b id="cntDict">0</b></span>
       <span class="skip">기존값 유지: <b id="cntSkip">0</b></span>
       <span class="fail">미해결: <b id="cntFail">0</b></span>
     </div>
+    <div id="sheetProgress" class="sheet-progress"></div>
   </section>
 
   <!-- 4단계: 미해결 건 보정 -->
@@ -125,6 +141,10 @@
     <h2>4. 미해결 주소 보정 <span id="remainBadge" class="badge"></span></h2>
     <p class="hint">항목을 클릭하면 지도에서 자동 검색됩니다. 후보를 클릭하거나 지도를 직접 클릭해 좌표를 지정하세요.</p>
     <label class="checkbox"><input type="checkbox" id="onlyUnresolved"> 미해결만 보기</label>
+    <div class="field hidden" id="sheetFilterWrap" style="max-width:280px">
+      <label>시트 필터</label>
+      <select id="sheetFilter"><option value="">전체 시트</option></select>
+    </div>
     <div class="fail-layout">
       <ul id="failList" class="fail-list"></ul>
       <div id="mapPanel" class="map-panel">
@@ -141,8 +161,16 @@
   <!-- 5단계: 다운로드 -->
   <section class="card hidden" id="step-download">
     <h2>5. 결과 다운로드</h2>
-    <p class="hint">남은 미해결 건은 좌표가 빈 채로 저장됩니다. 중간 저장도 가능합니다.</p>
+    <p class="hint">
+      원본 시트는 그대로 두고 바로 뒤에 <code>_완료</code> 시트를 붙여 저장합니다
+      (<code>A</code> / <code>A_완료</code> / <code>B</code> / <code>B_완료</code> 순서).
+      남은 미해결 건은 좌표가 빈 채로 저장되며, 중간 저장도 가능합니다.
+    </p>
     <button id="downloadBtn">엑셀 다운로드</button>
+    <button id="dictDownloadBtn" class="secondary">대체주소 사전만 따로 저장</button>
+    <p class="hint">
+      사전 파일은 공유 폴더에 두고 다음 작업 때 2-2단계에서 올리면 그대로 재사용됩니다.
+    </p>
   </section>
 </main>
 
