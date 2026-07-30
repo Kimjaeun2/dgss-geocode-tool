@@ -142,3 +142,32 @@ button.danger:hover { background: #a51111; }
   background: #fff8f0;
   color: #8d4b00;
 }
+/* 여러 시트 선택 */
+.sheet-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fafafa;
+}
+.sheet-item { white-space: nowrap; }
+.sheet-progress { margin-top: 10px; }
+
+/* 검수 목록의 시트 배지 */
+.badge-sheet {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* 사전 처리 건수 */
+.summary .dict { color: #6a1b9a; }
