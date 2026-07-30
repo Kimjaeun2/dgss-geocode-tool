@@ -146,3 +146,15 @@ test('parse — 읍면동+번지가 공백 없이 붙은 경우 (구산동1071, 
      { sido: '경기도', sgg: '고양시 일산서구', emd: '가좌동', road: null, bunji: '941', rest: null, suffix: null },
      '가좌동941');
 });
+
+test('parse — 시군구와 실제 주소 사이에 낀 무관한 단어를 건너뛴다 (민원 킨텍스로240, 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 민원 킨텍스로240'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '킨텍스로', bunji: '240', rest: null, suffix: null },
+     '민원 킨텍스로240 — 잡음 단어 건너뛰고 도로명+번지 인식');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 민원 킨텍스로240')), 'address', '민원 킨텍스로240 route');
+});
+
+test('parse — 실제 지명(landmark)까지 건드리지 않는다 (잡음 건너뛰기 회귀 방지)', function () {
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 한뫼공원주변')), 'place', '한뫼공원주변은 여전히 지명형');
+  eq(Addr.parse('경기도 고양시 일산서구 한뫼공원 주변').rest, '한뫼공원', '한뫼공원 주변도 정상');
+});

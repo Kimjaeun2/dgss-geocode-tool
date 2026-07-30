@@ -67,6 +67,22 @@
       out.sgg = out.sido;
     }
 
+    // 시군구와 실제 주소 사이에 낀 무관한 단어를 건너뛴다 (예: '민원 킨텍스로240').
+    // 최대 2개까지만 건너뛰고, 그 안에서 도로명/읍면동+번지 구조를 못 찾으면
+    // 원래 위치로 되돌린다 — 진짜 지명(landmark)까지 잘못 건드리지 않기 위함.
+    (function skipNoiseWords() {
+      var saved = i, skipped = 0;
+      while (i < t.length && skipped <= 2) {
+        var tok = t[i];
+        var isAnchor = EMD_BUNJI_RE.test(tok) || ROAD_BUNJI_RE.test(tok) ||
+          (EMD_RE.test(tok) && !/^\d/.test(tok)) ||
+          (ROAD_RE.test(tok) && !BUNJI_RE.test(tok));
+        if (isAnchor) return;
+        i++; skipped++;
+      }
+      i = saved; // 못 찾음 - 지명 처리로 넘어가도록 원위치
+    })();
+
     // 3) 읍·면·동·리 (번지가 공백 없이 붙어 있으면 여기서 분리하고 끝낸다)
     while (i < t.length) {
       var combinedEmd = t[i].match(EMD_BUNJI_RE);
