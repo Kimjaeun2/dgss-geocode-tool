@@ -111,3 +111,27 @@ test('keywordCandidates — 지명이 없으면 빈 배열', function () {
   eq(Addr.keywordCandidates(Addr.parse('경기도 고양시 일산서구 대화동 2600')), [],
      '주소검색 경로는 후보 없음');
 });
+
+test('parse — 도로명+건물번호가 공백 없이 붙은 경우 (배포 후 발견된 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 곳산길157-24'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '곳산길', bunji: '157-24', rest: null, suffix: null },
+     '곳산길157-24');
+
+  eq(Addr.parse('경기도 고양시 일산서구 대화로54-6'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '대화로', bunji: '54-6', rest: null, suffix: null },
+     '대화로54-6');
+
+  eq(Addr.parse('경기도 고양시 일산서구 산덕로24번길12-2'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '산덕로24번길', bunji: '12-2', rest: null, suffix: null },
+     '산덕로24번길12-2 — 로/길이 두 번 나오는 이름');
+
+  eq(Addr.parse('경기도 고양시 일산서구 송포로113번길191-87'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '송포로113번길', bunji: '191-87', rest: null, suffix: null },
+     '송포로113번길191-87');
+});
+
+test('route — 결합형 도로명 주소는 반드시 address 경로여야 한다 (회귀 방지)', function () {
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 곳산길157-24')), 'address', '곳산길157-24');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 송산로197번길9')), 'address', '송산로197번길9');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 법곳길136번길30')), 'address', '법곳길136번길30');
+});
