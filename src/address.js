@@ -25,6 +25,11 @@
      마지막 로/길 지점을 찾아낸다. */
   var ROAD_BUNJI_RE = /^(.+?(?:로|길))(\d+(?:-\d+)?)$/;
 
+  /* 읍/면/동/가/리 와 번지 사이에 공백이 없는 경우 ('구산동1071').
+     도로명과 같은 이유로 공백이 없으면 그대로 지명(rest)으로 빠져 장소검색으로
+     잘못 보내진다 — 도로명 결합 처리와 동일한 패턴을 행정구역에도 적용한다. */
+  var EMD_BUNJI_RE = /^(.+?(?:읍|면|동|가|리))(\d+(?:-\d+)?)$/;
+
   /** NBSP 등 비표준 공백을 일반 공백으로 바꾸고 연속 공백을 축약한다. */
   function normalize(s) {
     return String(s == null ? '' : s)
@@ -62,10 +67,21 @@
       out.sgg = out.sido;
     }
 
-    // 3) 읍·면·동·리
-    while (i < t.length && EMD_RE.test(t[i]) && !/^\d/.test(t[i])) {
-      out.emd = out.emd ? out.emd + ' ' + t[i] : t[i];
-      i++;
+    // 3) 읍·면·동·리 (번지가 공백 없이 붙어 있으면 여기서 분리하고 끝낸다)
+    while (i < t.length) {
+      var combinedEmd = t[i].match(EMD_BUNJI_RE);
+      if (combinedEmd) {
+        out.emd = out.emd ? out.emd + ' ' + combinedEmd[1] : combinedEmd[1];
+        out.bunji = combinedEmd[2];
+        i++;
+        break;
+      }
+      if (EMD_RE.test(t[i]) && !/^\d/.test(t[i])) {
+        out.emd = out.emd ? out.emd + ' ' + t[i] : t[i];
+        i++;
+      } else {
+        break;
+      }
     }
 
     // 4) 도로명 + 건물번호

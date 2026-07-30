@@ -135,3 +135,14 @@ test('route — 결합형 도로명 주소는 반드시 address 경로여야 한
   eq(Addr.route(Addr.parse('경기도 고양시 일산서구 송산로197번길9')), 'address', '송산로197번길9');
   eq(Addr.route(Addr.parse('경기도 고양시 일산서구 법곳길136번길30')), 'address', '법곳길136번길30');
 });
+
+test('parse — 읍면동+번지가 공백 없이 붙은 경우 (구산동1071, 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 구산동1071'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: '구산동', road: null, bunji: '1071', rest: null, suffix: null },
+     '구산동1071');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 구산동1071')), 'address', '구산동1071 route');
+
+  eq(Addr.parse('경기도 고양시 일산서구 가좌동941'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: '가좌동', road: null, bunji: '941', rest: null, suffix: null },
+     '가좌동941');
+});
