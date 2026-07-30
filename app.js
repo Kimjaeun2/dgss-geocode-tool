@@ -55,7 +55,7 @@ const CRS_LIST = [
 ];
 CRS_LIST.forEach((c) => { if (c.def) proj4.defs(c.code, c.def); });
 
-let targetCrs = 'EPSG:5181';
+let targetCrs = 'EPSG:2097';
 
 /** API가 준 WGS84 경도/위도를 선택된 좌표계로 변환 */
 function toProjected(lon, lat) {
@@ -641,8 +641,12 @@ function prepareAllSheets() {
     const road = findColumn(s, roadName);
     if (jibun < 0 && road < 0) { skipped.push(s.name); s.colIdx = null; return; }
 
+    // 결과 컬럼을 새로 만들기 전의 헤더 길이. 다운로드 시 이 지점을 기준으로
+    // 새 컬럼들을 주소 컬럼 바로 뒤에 끼워넣고 나머지 원본 컬럼을 오른쪽으로 민다.
+    const originalLen = s.aoa[0].length;
+
     s.colIdx = {
-      jibun, road,
+      jibun, road, originalLen,
       x: findOrCreateColumn(s, xName),
       y: findOrCreateColumn(s, yName),
       sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
@@ -1086,6 +1090,87 @@ function saveCoord(lon, lat, info, method) {
 
 // ====== 4단계: 다운로드 ======
 /** 엑셀 시트명은 31자 제한. '_완료' 를 붙일 수 있도록 앞을 자른다. */
+// ====== 중복 제거 ======
+// 판정 기준은 "지오코딩으로 확정된 주소" 하나다 — 대체주소 > 지번결과 > 도로명결과
+// > 원본 소재지 순으로 첫 번째로 채워진 값을 쓴다. 시설명은 판정에 관여하지 않는다:
+// (시설명 같음 + 주소 같음) 과 (시설명 다름 + 주소 같음) 을 모두 같은 시설로 보고,
+// (시설명 같음 + 주소 다름) 은 다른 시설로 남겨두면, 결국 "주소가 같은가"만으로
+// 전부 설명된다.
+function resolvedAddressOf(sheet, row) {
+  const ci = sheet.colIdx;
+  const alt = ci.alt >= 0 ? row[ci.alt] : '';
+  if (alt) return Addr.normalize(alt);
+  const jibun = ci.jibunResult >= 0 ? row[ci.jibunResult] : '';
+  if (jibun) return Addr.normalize(jibun);
+  const road = ci.roadResult >= 0 ? row[ci.roadResult] : '';
+  if (road) return Addr.normalize(road);
+  const sojaeji = ci.sojaeji >= 0 ? row[ci.sojaeji] : '';
+  return Addr.normalize(sojaeji);
+}
+
+/**
+ * 확정 주소가 같은 행들을 하나의 시설로 묶어 중복을 제거한다.
+ * 그룹 안에서는 좌표가 확정된(X/Y 가 숫자인) 행을 우선하고, 그중 첫 번째 행만 남긴다.
+ * 판정 근거(확정 주소)가 없는 행은 비교 대상이 없으므로 그대로 둔다.
+ * 반환: { aoa: 중복 제거된 aoa, removed: 제거된 행 수, log: [{address, kept, removed}] }
+ */
+function dedupeRows(sheet) {
+  const ci = sheet.colIdx;
+  const header = sheet.aoa[0];
+  const dataRows = sheet.aoa.slice(1);
+
+  const groups = new Map();
+  dataRows.forEach((row, i) => {
+    const key = resolvedAddressOf(sheet, row);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
+
+  const removeSet = new Set();
+  const log = [];
+  const hasCoord = (i) => isNum(dataRows[i][ci.x]) && isNum(dataRows[i][ci.y]);
+
+  groups.forEach((idxs, key) => {
+    if (idxs.length < 2) return;
+    const withCoord = idxs.filter(hasCoord);
+    const keepIdx = (withCoord.length ? withCoord : idxs)[0];
+    const removedIdxs = idxs.filter((i) => i !== keepIdx);
+    removedIdxs.forEach((i) => removeSet.add(i));
+    log.push({
+      address: key,
+      kept: (ci.sojaeji >= 0 && dataRows[keepIdx][ci.sojaeji]) || '',
+      removed: removedIdxs.map((i) => (ci.sojaeji >= 0 && dataRows[i][ci.sojaeji]) || '(빈 소재지)'),
+    });
+  });
+
+  const keptRows = dataRows.filter((_, i) => !removeSet.has(i));
+  return { aoa: [header].concat(keptRows), removed: removeSet.size, log };
+}
+
+/**
+ * 결과 시트를 위해 컬럼 순서를 재배치한다.
+ * [원본: 처음 ~ 주소컬럼] + [신규 결과 컬럼들] + [원본: 주소컬럼 뒤 나머지]
+ * 순서로 만든다 — 실제 작업 시트에서 결과를 주소 바로 뒤에서 확인하기 편하도록.
+ * 이미 있던 컬럼을 X/Y 로 골랐을 경우(새로 만든 게 아님)는 원래 자리에 그대로
+ * 두고 중복 삽입하지 않는다.
+ */
+function reorderForOutput(sheet) {
+  const ci = sheet.colIdx;
+  const originalLen = ci.originalLen;
+  const insertPoint = Math.max(ci.jibun, ci.road) + 1;
+
+  const candidates = [ci.sojaeji, ci.x, ci.y, ci.alt, ci.jibunResult, ci.roadResult, ci.lon, ci.lat, ci.method, ci.query];
+  const newCols = candidates.filter((idx) => idx >= originalLen);
+
+  const order = [];
+  for (let i = 0; i < insertPoint; i++) order.push(i);
+  newCols.forEach((idx) => order.push(idx));
+  for (let i = insertPoint; i < originalLen; i++) order.push(i);
+
+  return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
+}
+
 function doneSheetName(base, used) {
   const SUFFIX = '_완료';
   const MAX = 31;
@@ -1115,6 +1200,8 @@ $('downloadBtn').addEventListener('click', () => {
   const outNames = [];
   const outSheets = {};
   const renamed = [];
+  const dedupLog = []; // { sheet, address, kept, removed } 시트를 넘나드는 감사 로그
+  let dedupTotal = 0;
 
   workbook.SheetNames.forEach((name) => {
     // 원본 시트는 값·구조를 그대로 통과시킨다.
@@ -1131,10 +1218,17 @@ $('downloadBtn').addEventListener('click', () => {
     used.add(dName);
     if (dName !== name + '_완료') renamed.push(`${name} -> ${dName}`);
 
-    const ws = XLSX.utils.aoa_to_sheet(s.aoa);
+    // 시트 안에서만 중복 제거: 확정 주소(대체주소>지번>도로명>소재지)가 같은 행은
+    // 좌표 확정 행 우선 + 첫 행만 남긴다. 원본 시트가 아니라 결과 시트에만 반영한다.
+    const deduped = dedupeRows(s);
+    dedupTotal += deduped.removed;
+    deduped.log.forEach((entry) => dedupLog.push(Object.assign({ sheet: s.name }, entry)));
+    if (s.stats) s.stats.dedup = deduped.removed;
+
+    // 컬럼 순서가 원본과 달라지므로(주소 뒤에 결과 컬럼 삽입) 열 너비·병합은
+    // 위치가 어긋날 수 있어 옮기지 않는다. 틀 고정만 유지한다.
+    const ws = XLSX.utils.aoa_to_sheet(reorderForOutput({ aoa: deduped.aoa, colIdx: s.colIdx }));
     const oldWs = workbook.Sheets[name];
-    if (oldWs['!cols']) ws['!cols'] = oldWs['!cols'];
-    if (oldWs['!merges']) ws['!merges'] = oldWs['!merges'];
     if (oldWs['!freeze']) ws['!freeze'] = oldWs['!freeze'];
 
     outNames.push(dName);
@@ -1149,12 +1243,22 @@ $('downloadBtn').addEventListener('click', () => {
     outSheets[dn] = XLSX.utils.aoa_to_sheet(Dict.toAOA());
   }
 
+  // 중복 제거 로그 (감사용): 어떤 행이 남고 어떤 행이 지워졌는지 그대로 남긴다
+  if (dedupLog.length) {
+    const dedupRows = [['시트', '확정 주소', '남은 행(소재지)', '제거된 행(소재지)']];
+    dedupLog.forEach((e) => dedupRows.push([e.sheet, e.address, e.kept, e.removed.join(' / ')]));
+    const dn2 = uniqueName('중복제거로그', used);
+    used.add(dn2);
+    outNames.push(dn2);
+    outSheets[dn2] = XLSX.utils.aoa_to_sheet(dedupRows);
+  }
+
   // 처리 요약
-  const summary = [['시트', '대상', '주소검색', '장소검색', '사전', '기존값', '미해결']];
+  const summary = [['시트', '대상', '주소검색', '장소검색', '사전', '기존값', '미해결', '중복제거']];
   sheets.forEach((s) => {
     if (!s.processed || !s.stats) return;
     const t = s.stats;
-    summary.push([s.name, t.total, t.ok, t.place, t.dict, t.skip, t.fail]);
+    summary.push([s.name, t.total, t.ok, t.place, t.dict, t.skip, t.fail, t.dedup || 0]);
   });
   if (renamed.length) {
     summary.push([]);
