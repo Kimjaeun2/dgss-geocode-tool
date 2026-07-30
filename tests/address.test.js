@@ -158,3 +158,13 @@ test('parse — 실제 지명(landmark)까지 건드리지 않는다 (잡음 건
   eq(Addr.route(Addr.parse('경기도 고양시 일산서구 한뫼공원주변')), 'place', '한뫼공원주변은 여전히 지명형');
   eq(Addr.parse('경기도 고양시 일산서구 한뫼공원 주변').rest, '한뫼공원', '한뫼공원 주변도 정상');
 });
+
+test('parse — 시도 축약형도 인정한다 (경기도 대신 경기, 회귀)', function () {
+  eq(Addr.parse('경기 고양시 일산서구 신덕로24번길 12-2'),
+     { sido: '경기', sgg: '고양시 일산서구', emd: null, road: '신덕로24번길', bunji: '12-2', rest: null, suffix: null },
+     '경기(축약) — 카카오맵도 인정하는 표기');
+  eq(Addr.route(Addr.parse('경기 고양시 일산서구 신덕로24번길 12-2')), 'address', '경기(축약) route');
+
+  eq(Addr.parse('대구 중구 동성로 1').sido, '대구', '대구(광역시 축약)도 인정');
+  eq(Addr.parse('대구 중구 동성로 1').sgg, '중구', '대구 다음 중구는 sgg로 정상 파싱');
+});
