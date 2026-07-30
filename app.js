@@ -259,9 +259,28 @@ async function geocodeAddress(addr) {
 async function geocodeAddressUncached(addr) {
   const parsed = Addr.parse(addr);
   const outside = [];
+  const vworldOn = window.VWorld && window.VWorld.isAvailable();
 
   // --- 주소검색 경로 ---
   if (Addr.route(parsed) === 'address') {
+    // VWorld 를 키가 있을 때 먼저 시도한다 (지번 -> 도로명 순). 어떤 표기인지
+    // 미리 알 수 없어 둘 다 시도하되, 실패해도 카카오로 계속 진행한다.
+    if (vworldOn) {
+      for (const t of ['PARCEL', 'ROAD']) {
+        const r = await window.VWorld.getcoord(addr, t);
+        if (r.state === 'ok') {
+          return {
+            status: 'ok',
+            method: t === 'PARCEL' ? '주소검색(VWorld:지번)' : '주소검색(VWorld:도로명)',
+            lon: r.lon, lat: r.lat,
+            jibun: t === 'PARCEL' ? r.refinedText : '',
+            road: t === 'ROAD' ? r.refinedText : '',
+            usedQuery: addr,
+          };
+        }
+      }
+    }
+
     for (const v of Addr.addressVariants(addr)) {
       const r = await callKakaoWithRetry('address', v);
       if (r.state === 'ok') {
@@ -307,6 +326,34 @@ async function geocodeAddressUncached(addr) {
       return { status: 'ambiguous', candidates: inside, outside: outside, usedQuery: v };
     }
     // inside 가 0건이면 다음 키워드 후보로 넘어간다
+  }
+
+  // 카카오 장소검색으로 전혀 못 찾았을 때만 VWorld 장소검색을 보조로 시도한다.
+  if (vworldOn) {
+    for (const v of queries) {
+      const r = await window.VWorld.search(v);
+      if (r.state !== 'ok') continue;
+
+      const inside = [];
+      for (const p of r.data) {
+        const verdict = Gate.check(p.address_name, parsed.sgg);
+        if (verdict === 'out') outside.push(p);
+        else inside.push(p);
+      }
+
+      if (inside.length === 1) {
+        const p = inside[0];
+        return {
+          status: 'ok', method: '장소검색(VWorld자동)',
+          lon: p.x, lat: p.y,
+          jibun: p.address_name || '', road: p.road_address_name || '',
+          usedQuery: v,
+        };
+      }
+      if (inside.length > 1) {
+        return { status: 'ambiguous', candidates: inside, outside: outside, usedQuery: v };
+      }
+    }
   }
 
   return {
