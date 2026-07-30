@@ -69,6 +69,34 @@ let reviewList = [];       // { sheetIdx, rowIndex, address, candidates, outside
 let activeIdx = -1;
 let stopRequested = false;
 
+// ====== 연속 API 오류 차단기 ======
+// 쿼터가 소진되면 이후 모든 호출이 'error' 를 반환하는데, 이걸 그냥 두면
+// 남은 수천 건이 전부 "검색 결과 없음"으로 위장돼 원인을 알 수 없게 된다.
+// 연속 10회 오류(성공/무결과가 한 번도 안 섞임)면 전체를 멈추고 명시적으로 알린다.
+const ERROR_BREAKER_LIMIT = 10;
+let consecutiveErrors = 0;
+let breakerTripped = false;
+
+/** API 호출 1회의 결과 상태를 반영한다. 'error' 가 연속되면 실행을 중단시킨다. */
+function noteApiResult(state) {
+  if (state === 'error') {
+    consecutiveErrors++;
+    if (consecutiveErrors >= ERROR_BREAKER_LIMIT && !breakerTripped) {
+      breakerTripped = true;
+      stopRequested = true;
+      const box = $('breakerWarning');
+      if (box) {
+        box.classList.remove('hidden');
+        box.textContent =
+          `API 오류가 연속 ${ERROR_BREAKER_LIMIT}회 발생해 자동으로 중단했습니다. ` +
+          `쿼터 소진이나 네트워크 문제일 수 있습니다 — 카카오/VWorld 콘솔에서 사용량을 확인한 뒤 다시 실행해주세요.`;
+      }
+    }
+  } else {
+    consecutiveErrors = 0;
+  }
+}
+
 let map = null, marker = null, geocoder = null, places = null;
 
 const $ = (id) => document.getElementById(id);
@@ -117,6 +145,8 @@ function resetRun() {
   reviewList = [];
   activeIdx = -1;
   stopRequested = false;
+  consecutiveErrors = 0;
+  breakerTripped = false;
   geocodeCache.clear(); // 다시 실행할 때는 이전 결과를 재사용하지 않고 새로 시도
   sheets.forEach((s) => { s.processed = false; s.stats = null; s.colIdx = null; });
   $('startBtn').disabled = false;
@@ -125,6 +155,8 @@ function resetRun() {
   $('step-download').classList.add('hidden');
   $('crsResult').innerHTML = '';
   $('sheetProgress').innerHTML = '';
+  const box = $('breakerWarning');
+  if (box) { box.classList.add('hidden'); box.textContent = ''; }
 }
 
 // ====== 시트 선택 ======
@@ -363,6 +395,7 @@ async function geocodeAddressUncached(addr) {
     if (vworldOn) {
       for (const t of ['PARCEL', 'ROAD']) {
         const r = await window.VWorld.getcoord(addr, t);
+        noteApiResult(r.state);
         if (r.state === 'ok') {
           return {
             status: 'ok',
@@ -378,6 +411,7 @@ async function geocodeAddressUncached(addr) {
 
     for (const v of Addr.addressVariants(addr)) {
       const r = await callKakaoWithRetry('address', v);
+      noteApiResult(r.state);
       if (r.state === 'ok') {
         const t = r.data[0];
         return {
@@ -399,6 +433,7 @@ async function geocodeAddressUncached(addr) {
 
   for (const v of queries) {
     const r = await callKakaoWithRetry('place', v);
+    noteApiResult(r.state);
     if (r.state !== 'ok') continue;
 
     const inside = [];
@@ -427,6 +462,7 @@ async function geocodeAddressUncached(addr) {
   if (vworldOn) {
     for (const v of queries) {
       const r = await window.VWorld.search(v);
+      noteApiResult(r.state);
       if (r.state !== 'ok') continue;
 
       const inside = [];
@@ -743,9 +779,17 @@ $('startBtn').addEventListener('click', async () => {
   renderFailList();
   renderSheetProgress();
 
-  if (reviewList.length === 0) {
-    $('step-fail').querySelector('.hint').textContent =
-      stopRequested ? '중지되었습니다. 처리된 부분까지 저장할 수 있습니다.' : '모든 주소가 자동으로 처리되었습니다.';
+  const untouched = total - done;
+  const hint = $('step-fail').querySelector('.hint');
+  if (breakerTripped) {
+    hint.textContent =
+      `API 오류 연속 발생으로 자동 중단됐습니다. ${untouched}건은 아예 시도되지 않았습니다 ` +
+      `(대량 "검색 결과 없음"으로 위장되는 것을 막기 위한 안전장치입니다). ` +
+      `쿼터를 확인한 뒤 나머지를 다시 실행해주세요. 처리된 부분까지는 저장할 수 있습니다.`;
+  } else if (stopRequested) {
+    hint.textContent = `중지되었습니다. ${untouched}건이 남았습니다. 처리된 부분까지 저장할 수 있습니다.`;
+  } else if (reviewList.length === 0) {
+    hint.textContent = '모든 주소가 자동으로 처리되었습니다.';
   }
 });
 
