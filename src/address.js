@@ -20,6 +20,11 @@
   /* 도로명: '킨텍스로', '가좌길' */
   var ROAD_RE = /(로|길)$/;
 
+  /* 도로명과 건물번호 사이에 공백이 없는 경우 ('곳산길157-24', '산덕로24번길12-2').
+     비탐욕 매칭이 로/길이 여러 번 나오는 '~로24번길' 같은 이름에서도 건물번호 앞
+     마지막 로/길 지점을 찾아낸다. */
+  var ROAD_BUNJI_RE = /^(.+?(?:로|길))(\d+(?:-\d+)?)$/;
+
   /** NBSP 등 비표준 공백을 일반 공백으로 바꾸고 연속 공백을 축약한다. */
   function normalize(s) {
     return String(s == null ? '' : s)
@@ -64,9 +69,17 @@
     }
 
     // 4) 도로명 + 건물번호
-    if (i < t.length && ROAD_RE.test(t[i]) && !BUNJI_RE.test(t[i])) {
-      out.road = t[i]; i++;
-      if (i < t.length && NUM_RE.test(t[i])) { out.bunji = t[i]; i++; }
+    if (i < t.length) {
+      var combined = t[i].match(ROAD_BUNJI_RE);
+      if (combined) {
+        // 도로명과 건물번호가 공백 없이 붙어 있는 경우 (결함: 관할 게이트 회귀 원인)
+        out.road = combined[1];
+        out.bunji = combined[2];
+        i++;
+      } else if (ROAD_RE.test(t[i]) && !BUNJI_RE.test(t[i])) {
+        out.road = t[i]; i++;
+        if (i < t.length && NUM_RE.test(t[i])) { out.bunji = t[i]; i++; }
+      }
     }
 
     // 5) 지번 — '산 12-3' (분리형) 또는 '2600' / '산12-3' (결합형)

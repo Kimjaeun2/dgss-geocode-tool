@@ -19,6 +19,17 @@
 <!-- 주소 파싱 · 지역 게이트 (순수 모듈, test.html 로 검증됨) -->
 <script src="src/address.js"></script>
 <script src="src/gate.js"></script>
+<!--
+  VWorld Open API 키
+  주의 1: https://www.vworld.kr 에서 발급받은 인증키로 아래 값을 교체하세요.
+  주의 2: VWorld 개발자센터에서 이 페이지의 실제 접속 도메인을 등록해야 합니다.
+  주의 3: 키가 비어있거나 아래 기본값 그대로면 VWorld 단계는 자동으로 건너뛰고
+         카카오만으로 지금처럼 동작합니다 — 키를 넣기 전에도 도구는 정상 작동합니다.
+-->
+<script>
+  window.VWORLD_API_KEY = 'REPLACE_WITH_YOUR_VWORLD_KEY';
+</script>
+<script src="src/providers/vworld.js"></script>
 </head>
 <body>
 <header>
