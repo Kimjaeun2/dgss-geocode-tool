@@ -641,8 +641,12 @@ function prepareAllSheets() {
     const road = findColumn(s, roadName);
     if (jibun < 0 && road < 0) { skipped.push(s.name); s.colIdx = null; return; }
 
+    // 결과 컬럼을 새로 만들기 전의 헤더 길이. 다운로드 시 이 지점을 기준으로
+    // 새 컬럼들을 주소 컬럼 바로 뒤에 끼워넣고 나머지 원본 컬럼을 오른쪽으로 민다.
+    const originalLen = s.aoa[0].length;
+
     s.colIdx = {
-      jibun, road,
+      jibun, road, originalLen,
       x: findOrCreateColumn(s, xName),
       y: findOrCreateColumn(s, yName),
       sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
@@ -1086,6 +1090,29 @@ function saveCoord(lon, lat, info, method) {
 
 // ====== 4단계: 다운로드 ======
 /** 엑셀 시트명은 31자 제한. '_완료' 를 붙일 수 있도록 앞을 자른다. */
+/**
+ * 결과 시트를 위해 컬럼 순서를 재배치한다.
+ * [원본: 처음 ~ 주소컬럼] + [신규 결과 컬럼들] + [원본: 주소컬럼 뒤 나머지]
+ * 순서로 만든다 — 실제 작업 시트에서 결과를 주소 바로 뒤에서 확인하기 편하도록.
+ * 이미 있던 컬럼을 X/Y 로 골랐을 경우(새로 만든 게 아님)는 원래 자리에 그대로
+ * 두고 중복 삽입하지 않는다.
+ */
+function reorderForOutput(sheet) {
+  const ci = sheet.colIdx;
+  const originalLen = ci.originalLen;
+  const insertPoint = Math.max(ci.jibun, ci.road) + 1;
+
+  const candidates = [ci.sojaeji, ci.x, ci.y, ci.alt, ci.jibunResult, ci.roadResult, ci.lon, ci.lat, ci.method, ci.query];
+  const newCols = candidates.filter((idx) => idx >= originalLen);
+
+  const order = [];
+  for (let i = 0; i < insertPoint; i++) order.push(i);
+  newCols.forEach((idx) => order.push(idx));
+  for (let i = insertPoint; i < originalLen; i++) order.push(i);
+
+  return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
+}
+
 function doneSheetName(base, used) {
   const SUFFIX = '_완료';
   const MAX = 31;
@@ -1131,10 +1158,10 @@ $('downloadBtn').addEventListener('click', () => {
     used.add(dName);
     if (dName !== name + '_완료') renamed.push(`${name} -> ${dName}`);
 
-    const ws = XLSX.utils.aoa_to_sheet(s.aoa);
+    // 컬럼 순서가 원본과 달라지므로(주소 뒤에 결과 컬럼 삽입) 열 너비·병합은
+    // 위치가 어긋날 수 있어 옮기지 않는다. 틀 고정만 유지한다.
+    const ws = XLSX.utils.aoa_to_sheet(reorderForOutput(s));
     const oldWs = workbook.Sheets[name];
-    if (oldWs['!cols']) ws['!cols'] = oldWs['!cols'];
-    if (oldWs['!merges']) ws['!merges'] = oldWs['!merges'];
     if (oldWs['!freeze']) ws['!freeze'] = oldWs['!freeze'];
 
     outNames.push(dName);
