@@ -5,6 +5,33 @@
    - 여러 시트를 한 번에 처리하고 검수는 한 화면에서 통합해 진행한다.
    - DB 저장 없음. 모든 처리는 브라우저 메모리에서만 이루어짐.
    ========================================================================= */
+(function () {
+'use strict';
+
+// ====== 필수 라이브러리 확인 ======
+// CDN/사내망 차단으로 스크립트가 안 올라오면 이 파일의 나머지 코드가 실행되자마자
+// (예: 아래 proj4.defs 호출) 예외를 던지며 조용히 죽는다. 그래서 다른 어떤 코드보다
+// 먼저 확인하고, 없으면 여기서 멈춘 뒤 화면에 어떤 라이브러리가 문제인지 알린다.
+const missingLibs = [];
+if (typeof XLSX === 'undefined') missingLibs.push('XLSX (엑셀 읽기/쓰기, cdnjs)');
+if (typeof proj4 === 'undefined') missingLibs.push('proj4 (좌표계 변환, cdnjs)');
+if (typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) missingLibs.push('카카오맵 JS SDK (dapi.kakao.com)');
+if (typeof Addr === 'undefined') missingLibs.push('src/address.js');
+if (typeof Gate === 'undefined') missingLibs.push('src/gate.js');
+if (typeof Dict === 'undefined') missingLibs.push('src/dictionary.js');
+
+if (missingLibs.length) {
+  const box = document.getElementById('uploadStatus');
+  if (box) {
+    box.className = 'status warn';
+    box.textContent =
+      '다음 라이브러리를 불러오지 못해 도구를 시작할 수 없습니다: ' + missingLibs.join(', ') + '. ' +
+      '사내 네트워크가 외부 CDN을 막고 있거나, 파일 경로/도메인 등록이 바뀌지 않았는지 확인해주세요.';
+  }
+  const fi = document.getElementById('fileInput');
+  if (fi) fi.disabled = true;
+  return; // 아래 코드는 위 라이브러리들에 의존하므로 실행하지 않는다
+}
 
 // ====== 좌표계 정의 ======
 // 기존 시트의 X/Y는 WGS84 경위도가 아니라 투영좌표계(미터)입니다.
@@ -1151,3 +1178,5 @@ $('dictDownloadBtn').addEventListener('click', () => {
   const ws = XLSX.utils.aoa_to_sheet(Dict.toAOA());
   XLSX.writeFile({ SheetNames: ['대체주소사전'], Sheets: { '대체주소사전': ws } }, '대체주소사전.xlsx');
 });
+
+})();
