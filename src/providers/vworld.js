@@ -10,7 +10,7 @@
 (function (global) {
   'use strict';
 
-  var PLACEHOLDER = 'REPLACE_WITH_YOUR_VWORLD_KEY';
+  var PLACEHOLDER = '24BF2E1D-35E5-321D-BCFC-B953984C1D4A';
 
   function isAvailable() {
     var key = global.VWORLD_API_KEY;
