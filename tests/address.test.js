@@ -206,3 +206,77 @@ test('parse — 번지 뒤에 공백 없이 위치접미어가 붙어도 구조�
   eq(p.suffix, '주변', 'suffix로 분리됨');
   eq(Addr.route(p), 'address', 'route');
 });
+
+test('parse — 읍면동+번지 뒤에 공백 없이 시설명이 붙어도 번지를 인식한다 (실제 데이터 다수 발견, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 대화동1449-1송포공원');
+  eq(p.emd, '대화동', 'emd');
+  eq(p.bunji, '1449-1', 'bunji');
+  eq(p.rest, '송포공원', '붙어있던 시설명은 rest로 넘어감');
+  eq(Addr.route(p), 'address', '번지가 확정됐으므로 address 경로');
+
+  var p2 = Addr.parse('경기도 고양시 일산서구 탄현동1472탄현공원(DMS)');
+  eq(p2.emd, '탄현동', 'emd — 괄호 참고메모는 구조 판정 전에 먼저 제거됨');
+  eq(p2.bunji, '1472', 'bunji');
+  eq(p2.rest, '탄현공원', 'rest');
+  eq(Addr.route(p2), 'address', '(DMS) 표기가 붙어도 address 경로');
+});
+
+test('parse — 도로명+번지 뒤에 공백 없이 시설명이 붙어도 번지를 인식한다 (경의로790한산천, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 경의로790한산천');
+  eq(p.road, '경의로', 'road');
+  eq(p.bunji, '790', 'bunji');
+  eq(p.rest, '한산천', 'rest');
+  eq(Addr.route(p), 'address', 'route');
+});
+
+test('parse — 도로명+번지 뒤에 시설명과 위치접미어가 함께 공백 없이 붙는 경우 (송산로486-28선인장연구소주변, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 송산로486-28선인장연구소주변');
+  eq(p.road, '송산로', 'road');
+  eq(p.bunji, '486-28', 'bunji');
+  eq(p.suffix, '주변', '접미어는 구조 판정 전에 먼저 분리됨');
+  eq(p.rest, '선인장연구소', 'rest');
+  eq(Addr.route(p), 'address', 'route');
+});
+
+test('parse — 번지 뒤 글루드 시설명 확장 이후에도 순수 지명형은 여전히 place 로 남는다 (회귀 방지)', function () {
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 제1공원')), 'place', '숫자 섞인 순수 지명 (기존 회귀 유지)');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 킨텍스4번게이트주변')), 'place', '번지 구조가 아닌 지명 (기존 회귀 유지)');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 덕이동 하이파크2단지 옆 수로')), 'place', '공백으로 분리된 지명은 여전히 place (덕이동만 번지 없이 확정)');
+});
+
+test('parse — 콤마로 번지가 여러 개 나열돼도 첫 번째 번지로 주소검색 경로를 잡는다 (실제 데이터 발견, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 주엽동3,142');
+  eq(p.emd, '주엽동', 'emd');
+  eq(p.bunji, '3', '첫 번째 번지만 확정');
+  eq(Addr.route(p), 'address', '번지가 확정됐으므로 address 경로');
+
+  var p2 = Addr.parse('경기도 고양시 일산서구 일산동1042,1043');
+  eq(p2.bunji, '1042', '첫 번째 번지만 확정');
+  eq(Addr.route(p2), 'address', 'route');
+});
+
+test('parse — 콤마 나열 번지 뒤에 시설명까지 공백 없이 붙어도 처리한다 (주엽동127,129문촌18단지백암공원, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 주엽동127,129문촌18단지백암공원');
+  eq(p.emd, '주엽동', 'emd');
+  eq(p.bunji, '127', '첫 번째 번지만 확정');
+  eq(p.rest, '문촌18단지백암공원', 'rest — 두 번째 번지 이후 시설명');
+  eq(Addr.route(p), 'address', 'route');
+});
+
+test('addressVariants — 콤마로 나열된 두 번째 번지를 버린 변형이 후보에 포함된다 (회귀)', function () {
+  var v = Addr.addressVariants('경기도 고양시 일산서구 주엽동3,142');
+  contains(v, '경기도 고양시 일산서구 주엽동3', '첫 번째 번지만 남긴 변형 포함');
+});
+
+test('parse — 참고메모 괄호가 문자열 중간에 있어도 뒤에 이어지는 진짜 주소를 찾는다 (실제 데이터 발견, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 종합운동장주변(민원)대화동2325-3');
+  eq(p.emd, '대화동', 'emd — 괄호 뒤에 이어지는 진짜 주소를 인식');
+  eq(p.bunji, '2325-3', 'bunji');
+  eq(Addr.route(p), 'address', '괄호 앞의 지명(종합운동장주변)은 잃더라도 정확한 주소를 우선한다');
+
+  var p2 = Addr.parse('경기도 고양시 일산서구 덕이로220-10(10번홪자)5회');
+  eq(p2.road, '덕이로', 'road');
+  eq(p2.bunji, '220-10', 'bunji — 괄호를 지우면서 숫자가 섞이지 않아야 함 (220-105 아님)');
+  eq(p2.rest, '5회', 'rest');
+  eq(Addr.route(p2), 'address', 'route');
+});
