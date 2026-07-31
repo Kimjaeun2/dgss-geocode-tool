@@ -424,7 +424,10 @@ async function geocodeAddressUncached(addr) {
     if (vworldOn) {
       for (const t of ['PARCEL', 'ROAD']) {
         const r = await window.VWorld.getcoord(addr, t);
-        noteApiResult(r.state);
+        // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
+        // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
+        // 하는데, 여기서 카운트하면 VWorld만 잠깐 죽어도 카카오는 멀쩡한데
+        // 전체 작업이 멈춰버린다.
         if (r.state === 'ok') {
           return {
             status: 'ok',
@@ -491,7 +494,7 @@ async function geocodeAddressUncached(addr) {
   if (vworldOn) {
     for (const v of queries) {
       const r = await window.VWorld.search(v);
-      noteApiResult(r.state);
+      // getcoord 와 같은 이유로 VWorld 오류는 차단기에 반영하지 않는다.
       if (r.state !== 'ok') continue;
 
       const inside = [];
