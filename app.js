@@ -67,16 +67,15 @@ function toProjected(lon, lat) {
 function round(v, d) { const p = Math.pow(10, d); return Math.round(v * p) / p; }
 
 // ====== 결과 컬럼 이름 ======
-// '대체주소' 는 지명형 주소가 실제 주소로 치환된 행에만 채운다.
-// '검색어' 는 실제로 API 에 보낸 문자열(추적용)이며 '대체주소' 와 역할이 다르다.
+// 기존 수작업 '_작업' 시트와 컬럼 구조를 동일하게 맞춘다. '지오코딩 안된 주소 보충'
+// 은 예전 컬럼명을 그대로 쓰되, 내용은 검색 쿼리가 아니라 실제로 확정된 주소를
+// 채운다 (지명형 주소가 실제 주소로 치환된 행에만 채움). 'locx'는 예전 시트에
+// 남아있던 빈 컬럼으로, 아무것도 쓰지 않고 자리만 맞춰 만든다.
 const COL_SOJAEJI = '소재지';
-const COL_ALT     = '대체주소';
+const COL_LOCX    = 'locx';
+const COL_ALT     = '지오코딩 안된 주소 보충';
 const COL_JIBUN   = '지번';
 const COL_ROAD    = '도로명';
-const COL_LON     = '경도(WGS84)';
-const COL_LAT     = '위도(WGS84)';
-const COL_METHOD  = '매칭방식';
-const COL_QUERY   = '검색어';
 
 /* 원본 주소로는 못 찾아 다른 주소로 바꿔 넣은 경우의 매칭방식.
    이 목록에 해당할 때만 '대체주소' 컬럼을 채운다. */
@@ -259,6 +258,9 @@ function populateCrsSelect() {
     opt.value = c.code; opt.textContent = c.label;
     sel.appendChild(opt);
   });
+  // CRS_LIST 순서상 첫 항목(5181)이 화면 기본 선택이 되어버리는 것을 막는다.
+  // targetCrs(실제 사용 좌표계 EPSG:2097)와 화면 표시를 반드시 일치시킨다.
+  sel.value = targetCrs;
   sel.value = targetCrs;
   sel.onchange = () => { targetCrs = sel.value; };
 }
@@ -647,16 +649,13 @@ function prepareAllSheets() {
 
     s.colIdx = {
       jibun, road, originalLen,
+      sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
+      locx: findOrCreateColumn(s, COL_LOCX),
+      alt: findOrCreateColumn(s, COL_ALT),
       x: findOrCreateColumn(s, xName),
       y: findOrCreateColumn(s, yName),
-      sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
-      alt: findOrCreateColumn(s, COL_ALT),
       jibunResult: findOrCreateColumn(s, COL_JIBUN),
       roadResult: findOrCreateColumn(s, COL_ROAD),
-      lon: findOrCreateColumn(s, COL_LON),
-      lat: findOrCreateColumn(s, COL_LAT),
-      method: findOrCreateColumn(s, COL_METHOD),
-      query: findOrCreateColumn(s, COL_QUERY),
     };
   });
 
@@ -679,25 +678,22 @@ function ensureServices() {
 
 /**
  * 행에 좌표와 주소 정보를 기록한다.
- * '대체주소' 는 원본으로 못 찾아 다른 주소로 치환된 경우에만 채운다 (isAltMethod).
- * 내용은 지번 우선, 없으면 도로명.
+ * '지오코딩 안된 주소 보충' 은 원본으로 못 찾아 다른 주소로 치환된 경우에만
+ * 채운다 (isAltMethod). 내용은 지번 우선, 없으면 도로명 — 예전 버전과 달리
+ * 검색 쿼리가 아니라 실제로 확정된 주소를 넣는다.
  */
 function writeRow(sheet, row, o) {
   const ci = sheet.colIdx;
   const proj = toProjected(o.lon, o.lat);
   row[ci.x] = proj.x;
   row[ci.y] = proj.y;
-  row[ci.lon] = round(parseFloat(o.lon), 7);
-  row[ci.lat] = round(parseFloat(o.lat), 7);
   if (o.jibun) row[ci.jibunResult] = o.jibun;
   if (o.road) row[ci.roadResult] = o.road;
-  row[ci.method] = o.method;
 
   if (isAltMethod(o.method)) {
     const alt = o.jibun || o.road || '';
     if (alt) row[ci.alt] = alt;
   }
-  if (o.usedQuery && o.usedQuery !== o.original) row[ci.query] = o.usedQuery;
 }
 
 /** 치환으로 확정된 결과를 사전에 등록한다. */
@@ -766,7 +762,6 @@ $('startBtn').addEventListener('click', async () => {
       // 이미 좌표가 "숫자로" 채워진 행은 건너뛴다 (주소 텍스트가 든 컬럼을 오인하지 않도록 숫자 검사)
       if (isNum(row[ci.x]) && isNum(row[ci.y])) {
         if (!row[ci.sojaeji]) row[ci.sojaeji] = addr;
-        if (!row[ci.method]) row[ci.method] = '기존값';
         skip++; sheet.stats.skip++; done++; tick();
         continue;
       }
@@ -1160,7 +1155,7 @@ function reorderForOutput(sheet) {
   const originalLen = ci.originalLen;
   const insertPoint = Math.max(ci.jibun, ci.road) + 1;
 
-  const candidates = [ci.sojaeji, ci.x, ci.y, ci.alt, ci.jibunResult, ci.roadResult, ci.lon, ci.lat, ci.method, ci.query];
+  const candidates = [ci.sojaeji, ci.locx, ci.alt, ci.x, ci.y, ci.jibunResult, ci.roadResult];
   const newCols = candidates.filter((idx) => idx >= originalLen);
 
   const order = [];
