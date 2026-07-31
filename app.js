@@ -856,6 +856,12 @@ function escapeHtml(s) {
 
 // ====== 3단계: 미해결 건 보정 ======
 $('onlyUnresolved').addEventListener('change', renderFailList);
+$('reasonFilter').addEventListener('change', renderFailList);
+
+/** '후보 여러 건'과 '결과 없음' 계열(검색 결과 없음 / 관할 내 결과 없음)을 구분한다. */
+function reasonCategory(item) {
+  return item.reason === '후보 여러 건' ? 'multi' : 'none';
+}
 
 /** 검수 목록의 시트 필터를 채운다 (처리한 시트가 2개 이상일 때만 노출) */
 function renderSheetFilter() {
@@ -880,11 +886,14 @@ function renderFailList() {
   const onlyUnresolved = $('onlyUnresolved').checked;
   const filterEl = $('sheetFilter');
   const filter = filterEl && filterEl.value !== '' ? parseInt(filterEl.value, 10) : null;
+  const reasonFilterEl = $('reasonFilter');
+  const reasonFilter = reasonFilterEl && reasonFilterEl.value !== '' ? reasonFilterEl.value : null;
   ul.innerHTML = '';
 
   reviewList.forEach((item, idx) => {
     if (onlyUnresolved && item.resolved) return;
     if (filter !== null && item.sheetIdx !== filter) return;
+    if (reasonFilter !== null && reasonCategory(item) !== reasonFilter) return;
 
     const li = document.createElement('li');
     li.className = item.resolved ? 'resolved' : '';
@@ -902,8 +911,11 @@ function renderFailList() {
     ul.appendChild(li);
   });
 
-  const remain = reviewList.filter((i) => !i.resolved).length;
-  $('remainBadge').textContent = `미해결 ${remain} / 전체 ${reviewList.length}`;
+  const unresolved = reviewList.filter((i) => !i.resolved);
+  const multiCount = unresolved.filter((i) => reasonCategory(i) === 'multi').length;
+  const noneCount = unresolved.length - multiCount;
+  $('remainBadge').textContent =
+    `미해결 ${unresolved.length} / 전체 ${reviewList.length} (후보 여러 건 ${multiCount} · 결과 없음 ${noneCount})`;
 
   if (activeIdx < 0 && reviewList.length > 0) selectItem(0);
 }
