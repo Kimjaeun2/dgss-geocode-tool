@@ -32,10 +32,17 @@
      마지막 로/길 지점을 찾아낸다. */
   var ROAD_BUNJI_RE = /^(.+?(?:로|길))(\d+(?:-\d+)?)$/;
 
-  /* 읍/면/동/가/리 와 번지 사이에 공백이 없는 경우 ('구산동1071').
+  /* 읍/면/동/가/리 와 번지 사이에 공백이 없는 경우 ('구산동1071', '덕이동산207').
      도로명과 같은 이유로 공백이 없으면 그대로 지명(rest)으로 빠져 장소검색으로
-     잘못 보내진다 — 도로명 결합 처리와 동일한 패턴을 행정구역에도 적용한다. */
-  var EMD_BUNJI_RE = /^(.+?(?:읍|면|동|가|리))(\d+(?:-\d+)?)$/;
+     잘못 보내진다 — 도로명 결합 처리와 동일한 패턴을 행정구역에도 적용한다.
+     '산'(임야 지번) 접두어와, 번지 뒤에 붙는 '번지'라는 글자(예: '930번지')도
+     함께 처리한다. */
+  var EMD_BUNJI_RE = /^(.+?(?:읍|면|동|가|리))(산?\d+(?:-\d+)?)(?:번지)?$/;
+
+  /* 실제 주소 뒤에 담당자가 붙인 참고메모 ('대산로58(민원)', '한뫼공원(환가주변)').
+     끝에 괄호가 있으면 구조 판정 전에 떼어낸다 — 안 떼면 ROAD_BUNJI_RE/EMD_BUNJI_RE
+     가 "끝이 숫자여야 함" 조건 때문에 완전히 유효한 도로명+번지도 통째로 놓친다. */
+  var TRAILING_NOTE_RE = /\s*\([^()]*\)\s*$/;
 
   /** NBSP 등 비표준 공백을 일반 공백으로 바꾸고 연속 공백을 축약한다. */
   function normalize(s) {
@@ -56,6 +63,19 @@
     };
 
     var norm = normalize(addr);
+    if (!norm) return out;
+
+    // 끝에 붙은 참고메모 괄호는 구조 판정 전에 떼어낸다 ('대산로58(민원)' -> '대산로58')
+    norm = normalize(norm.replace(TRAILING_NOTE_RE, ''));
+    if (!norm) return out;
+
+    // 위치 접미어도 구조 판정 전에 미리 떼어낸다. 번지 뒤에 공백 없이 바로
+    // 붙어도('일청로12번길28주변') 구조 인식을 방해하지 않도록 하기 위함.
+    var suffixMatch = norm.match(SUFFIX_RE);
+    if (suffixMatch) {
+      out.suffix = suffixMatch[1];
+      norm = normalize(norm.replace(SUFFIX_RE, ''));
+    }
     if (!norm) return out;
 
     var t = norm.split(' ');
@@ -143,9 +163,16 @@
     return out;
   }
 
-  /** 파싱 결과로 검색 경로를 정한다. 지명(rest)이 남아 있으면 장소검색이다. */
+  /**
+   * 파싱 결과로 검색 경로를 정한다.
+   * 번지가 이미 확정됐으면(예: '대화동1974-5 유충'에서 '유충'만 남은 경우) 뒤에
+   * 남은 텍스트는 참고메모로 보고 무조건 주소검색으로 보낸다 — 번지 확정이
+   * rest 유무보다 더 강한 신호다. 번지가 없을 때만 rest 유무로 판단한다.
+   */
   function route(parsed) {
-    return parsed && parsed.rest ? 'place' : 'address';
+    if (!parsed) return 'address';
+    if (parsed.bunji) return 'address';
+    return parsed.rest ? 'place' : 'address';
   }
 
   /** 배열에 정규화한 값을 중복 없이 넣는다. */

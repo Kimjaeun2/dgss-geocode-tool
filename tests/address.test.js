@@ -168,3 +168,41 @@ test('parse — 시도 축약형도 인정한다 (경기도 대신 경기, 회�
   eq(Addr.parse('대구 중구 동성로 1').sido, '대구', '대구(광역시 축약)도 인정');
   eq(Addr.parse('대구 중구 동성로 1').sgg, '중구', '대구 다음 중구는 sgg로 정상 파싱');
 });
+
+test('parse — 괄호 참고메모가 붙은 도로명/읍면동+번지도 인식한다 (실사용 데이터 발견, 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 대산로58(민원)'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: null, road: '대산로', bunji: '58', rest: null, suffix: null },
+     '대산로58(민원)');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 대화동1499-1(민원)')), 'address', '대화동1499-1(민원) route');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 한뫼공원(환가주변)')), 'place',
+     '한뫼공원(환가주변)은 여전히 지명형 (회귀 방지)');
+});
+
+test('route — 번지가 확정되면 뒤에 남은 설명은 무시하고 주소검색으로 보낸다 (회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 대화동1974-5 유충');
+  eq(p.emd, '대화동', 'emd');
+  eq(p.bunji, '1974-5', 'bunji');
+  eq(p.rest, '유충', 'rest에는 남지만');
+  eq(Addr.route(p), 'address', 'route는 address (번지 확정이 rest보다 우선)');
+});
+
+test('parse — 동 이름에 산+번지가 붙은 경우 (덕이동산207, 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 덕이동산207'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: '덕이동', road: null, bunji: '산207', rest: null, suffix: null },
+     '덕이동산207');
+});
+
+test('parse — 번지 뒤에 "번지"라는 글자가 붙어도 인식한다 (구산동930번지, 회귀)', function () {
+  eq(Addr.parse('경기도 고양시 일산서구 구산동930번지'),
+     { sido: '경기도', sgg: '고양시 일산서구', emd: '구산동', road: null, bunji: '930', rest: null, suffix: null },
+     '구산동930번지');
+  eq(Addr.route(Addr.parse('경기도 고양시 일산서구 일산동1104번지')), 'address', '일산동1104번지 route');
+});
+
+test('parse — 번지 뒤에 공백 없이 위치접미어가 붙어도 구조를 먼저 인식한다 (일청로12번길28주변, 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 일청로12번길28주변');
+  eq(p.road, '일청로12번길', 'road');
+  eq(p.bunji, '28', 'bunji');
+  eq(p.suffix, '주변', 'suffix로 분리됨');
+  eq(Addr.route(p), 'address', 'route');
+});
