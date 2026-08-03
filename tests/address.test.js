@@ -302,6 +302,11 @@ test('canonicalize — 구조를 전혀 못 읽는 문자열은 공백 정리만
   eq(Addr.canonicalize('그냥 아무 텍스트'), Addr.normalize('그냥 아무 텍스트'), 'fallback');
 });
 
+test('addressVariants — 시군구와 실제 주소 사이에 낀 노이즈 단어를 뺀 변형이 포함된다 (실제 데이터에서 검색 실패 확인 후 추가, 회귀)', function () {
+  var v = Addr.addressVariants('경기도 고양시 일산서구 민원 킨텍스로240');
+  contains(v, '경기도 고양시 일산서구 킨텍스로 240', '노이즈 단어(민원)가 빠진 변형 포함');
+});
+
 test('canonicalize — 번지가 같아도 뒤 지명이 다르면 다른 키다 (중복제거 과잉 병합 방지, 회귀)', function () {
   var bare = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23');
   var named = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23 농가주택주변');

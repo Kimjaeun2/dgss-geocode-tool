@@ -297,6 +297,21 @@
     pushUniq(out, stripParen(spaced));
     pushUniq(out, dropExtraBunji(base));
     pushUniq(out, dropExtraBunji(stripParen(base)));
+
+    // 시군구와 실제 주소 사이에 낀 무관한 단어('민원 킨텍스로240')는 위 변형들이
+    // 전부 못 지운다 — 전부 원본 문자열 기반 치환일 뿐, 구조를 모르기 때문이다.
+    // parse() 는 이 노이즈 단어를 구조 판정 시 이미 건너뛰므로, 그 결과로
+    // 재조립한 변형을 추가한다. 번지가 확정된 경우에만 의미가 있다.
+    var p = parse(addr);
+    if (p.bunji) {
+      var parts = [];
+      if (p.sido) parts.push(p.sido);
+      if (p.sgg) parts.push(p.sgg);
+      if (p.emd) parts.push(p.emd);
+      if (p.road) parts.push(p.road);
+      parts.push(p.bunji);
+      pushUniq(out, parts.join(' '));
+    }
     return out;
   }
 
