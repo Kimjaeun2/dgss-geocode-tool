@@ -268,6 +268,48 @@ test('addressVariants — 콤마로 나열된 두 번째 번지를 버린 변형
   contains(v, '경기도 고양시 일산서구 주엽동3', '첫 번째 번지만 남긴 변형 포함');
 });
 
+test('canonicalize — 공백 유무가 다른 같은 주소를 같은 키로 취급한다', function () {
+  eq(
+    Addr.canonicalize('경기도 고양시 일산서구 가좌로128'),
+    Addr.canonicalize('경기도 고양시 일산서구 가좌로 128'),
+    '도로명+번지 공백 유무'
+  );
+  eq(
+    Addr.canonicalize('경기도 고양시 일산서구 대화동 2008'),
+    Addr.canonicalize('경기도 고양시 일산서구 대화동2008'),
+    '읍면동+번지 공백 유무'
+  );
+});
+
+test('canonicalize — 시도 축약형과 정식 명칭을 같은 키로 취급한다', function () {
+  eq(
+    Addr.canonicalize('경기 고양시 일산서구 가좌로128'),
+    Addr.canonicalize('경기도 고양시 일산서구 가좌로128'),
+    '경기 vs 경기도'
+  );
+  eq(Addr.canonicalize('강원특별자치도 춘천시 온의동 123'), '강원 춘천시 온의동 123', '개편된 시도명도 축약');
+});
+
+test('canonicalize — 참고메모 괄호가 있어도 없어도 같은 키로 취급한다', function () {
+  eq(
+    Addr.canonicalize('경기도 고양시 일산서구 새말공원(민원)'),
+    Addr.canonicalize('경기도 고양시 일산서구 새말공원'),
+    '괄호 참고메모 유무'
+  );
+});
+
+test('canonicalize — 구조를 전혀 못 읽는 문자열은 공백 정리만 해서 반환한다 (회귀 방지)', function () {
+  eq(Addr.canonicalize('그냥 아무 텍스트'), Addr.normalize('그냥 아무 텍스트'), 'fallback');
+});
+
+test('canonicalize — 번지가 같아도 뒤 지명이 다르면 다른 키다 (중복제거 과잉 병합 방지, 회귀)', function () {
+  var bare = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23');
+  var named = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23 농가주택주변');
+  eq(bare, '경기 고양시 일산서구 송산로 464-23', '번지만 있는 쪽');
+  eq(named, '경기 고양시 일산서구 송산로 464-23 농가주택', 'rest 가 키에 남는다 (접미어 "주변"은 제거)');
+  eq(bare === named, false, '같은 필지의 서로 다른 대상지가 같은 키로 병합되면 안 됨');
+});
+
 test('parse — 참고메모 괄호가 문자열 중간에 있어도 뒤에 이어지는 진짜 주소를 찾는다 (실제 데이터 발견, 회귀)', function () {
   var p = Addr.parse('경기도 고양시 일산서구 종합운동장주변(민원)대화동2325-3');
   eq(p.emd, '대화동', 'emd — 괄호 뒤에 이어지는 진짜 주소를 인식');

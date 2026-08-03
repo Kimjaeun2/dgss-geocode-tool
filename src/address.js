@@ -16,6 +16,19 @@
     '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
   ];
 
+  /* 정식 명칭 -> 축약형. canonicalize() 에서 표기를 하나로 통일하는 데 쓴다.
+     접두어만 잘라내는 방식은 '충청북도' -> '충북'처럼 축약형이 접두어가 아닌
+     경우에 틀리므로, 명시적으로 매핑한다 (2023~2024 개편으로 생긴
+     강원특별자치도/전북특별자치도 등 신구 명칭 모두 포함). */
+  var SIDO_FULL_TO_SHORT = {
+    '서울특별시': '서울', '부산광역시': '부산', '대구광역시': '대구', '인천광역시': '인천',
+    '광주광역시': '광주', '대전광역시': '대전', '울산광역시': '울산', '세종특별자치시': '세종',
+    '경기도': '경기', '강원도': '강원', '강원특별자치도': '강원',
+    '충청북도': '충북', '충청남도': '충남',
+    '전라북도': '전북', '전북특별자치도': '전북', '전라남도': '전남',
+    '경상북도': '경북', '경상남도': '경남', '제주특별자치도': '제주',
+  };
+
   /* 시·군·구. 단, '~읍/면/동/가/리'로 끝나면 제외한다. */
   var SGG_RE = /(시|군|구)$/;
   var EMD_RE = /(읍|면|동|가|리)$/;
@@ -224,6 +237,41 @@
     return parsed.rest ? 'place' : 'address';
   }
 
+  /** 시·도를 축약형으로 통일한다 ('경기도'/'경기' -> '경기'). 매핑에 없으면 그대로 둔다. */
+  function shortSido(s) {
+    if (!s) return s;
+    if (SIDO_SHORT.indexOf(s) !== -1) return s;
+    return SIDO_FULL_TO_SHORT[s] || s;
+  }
+
+  /**
+   * parse() 가 뽑아낸 구조를 표기 차이 없는 표준 문자열 하나로 재조립한다.
+   * normalize() 는 공백 정리만 하기 때문에 '가좌로128'과 '가좌로 128', '경기'와
+   * '경기도', '새말공원(민원)'과 '새말공원'을 전부 다른 문자열로 취급한다 —
+   * 그 결과 사전 조회 / 중복 제거 / 지오코딩 캐시가 표기만 다른 같은 주소를
+   * 놓친다. 이 함수는 그 세 군데의 비교 키로 normalize() 대신 쓰기 위한 것이다.
+   * 실제 API에 보내는 검색어 문자열은 그대로 두고(원본 표기가 검색엔 오히려
+   * 유리할 수 있음), "같은 주소인가?"를 판정할 때만 이 함수를 쓴다.
+   */
+  function canonicalize(addr) {
+    var p = parse(addr);
+    if (!p.sido && !p.sgg && !p.emd && !p.road && !p.bunji && !p.rest) {
+      return normalize(addr); // 구조를 전혀 못 읽으면 공백 정리만 해서 반환
+    }
+    var parts = [];
+    if (p.sido) parts.push(shortSido(p.sido));
+    if (p.sgg) parts.push(p.sgg);
+    if (p.emd) parts.push(p.emd);
+    if (p.road) parts.push(p.road);
+    if (p.bunji) parts.push(p.bunji);
+    // rest 는 번지가 있어도 반드시 남긴다. 이 키는 중복 제거(=행 삭제)에도 쓰이는데,
+    // 번지가 같다고 rest 를 버리면 '송산로464-23'과 '송산로464-23 농가주택주변'이
+    // 같은 키가 되어 한 필지에 있는 서로 다른 대상지가 통째로 지워진다.
+    // (실데이터 측정: rest 를 버리면 삭제 행이 83건 -> 378건으로 늘었다.)
+    if (p.rest) parts.push(p.rest);
+    return parts.join(' ');
+  }
+
   /** 배열에 정규화한 값을 중복 없이 넣는다. */
   function pushUniq(arr, value) {
     var v = normalize(value);
@@ -267,6 +315,7 @@
 
   global.Addr = {
     normalize: normalize,
+    canonicalize: canonicalize,
     parse: parse,
     route: route,
     addressVariants: addressVariants,
