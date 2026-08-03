@@ -82,6 +82,7 @@ const COL_ROAD    = '도로명';
 const ALT_METHODS = [
   '사전',
   '장소검색(자동)', '장소검색(선택)', '장소검색(관할밖선택)', '장소검색(VWorld자동)',
+  '장소검색(이름일치자동)', '장소검색(VWorld이름일치자동)',
   '수동지정',
 ];
 const isAltMethod = (m) => ALT_METHODS.indexOf(m) !== -1;
@@ -406,10 +407,26 @@ async function geocodeAddress(addr) {
       usedQuery: '',
     };
   }
-  if (geocodeCache.has(addr)) return geocodeCache.get(addr);
+  // 캐시 키는 canonicalize() 로 통일한다 — 표기만 다른(공백·축약형 등) 같은
+  // 주소가 서로 다른 캐시 항목으로 나뉘어 API 를 중복 호출하는 걸 막는다.
+  const cacheKey = Addr.canonicalize(addr);
+  if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
   const result = await geocodeAddressUncached(addr);
-  geocodeCache.set(addr, result);
+  geocodeCache.set(cacheKey, result);
   return result;
+}
+
+/**
+ * 관할 내 후보가 여러 건이어도, 이름이 검색 지명과 완전히 같은 후보가 하나뿐이면
+ * 그걸로 확정한다. '세븐일레븐 대화새말공원점'처럼 지명이 상호명 일부로 섞여
+ * 들어간 후보와 '새말공원' 그 자체를 구분해야 하므로 부분 일치가 아니라
+ * 완전 일치(정규화 기준)만 인정한다.
+ */
+function findExactNameMatch(inside, parsed) {
+  const target = Addr.normalize(parsed.rest || '');
+  if (!target) return null;
+  const matches = inside.filter((p) => Addr.normalize(p.place_name || '') === target);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 async function geocodeAddressUncached(addr) {
@@ -485,6 +502,15 @@ async function geocodeAddressUncached(addr) {
       };
     }
     if (inside.length > 1) {
+      const exact = findExactNameMatch(inside, parsed);
+      if (exact) {
+        return {
+          status: 'ok', method: '장소검색(이름일치자동)',
+          lon: exact.x, lat: exact.y,
+          jibun: exact.address_name || '', road: exact.road_address_name || '',
+          usedQuery: v,
+        };
+      }
       return { status: 'ambiguous', candidates: inside, outside: outside, usedQuery: v };
     }
     // inside 가 0건이면 다음 키워드 후보로 넘어간다
@@ -514,6 +540,15 @@ async function geocodeAddressUncached(addr) {
         };
       }
       if (inside.length > 1) {
+        const exact = findExactNameMatch(inside, parsed);
+        if (exact) {
+          return {
+            status: 'ok', method: '장소검색(VWorld이름일치자동)',
+            lon: exact.x, lat: exact.y,
+            jibun: exact.address_name || '', road: exact.road_address_name || '',
+            usedQuery: v,
+          };
+        }
         return { status: 'ambiguous', candidates: inside, outside: outside, usedQuery: v };
       }
     }
@@ -1109,13 +1144,13 @@ function saveCoord(lon, lat, info, method) {
 function resolvedAddressOf(sheet, row) {
   const ci = sheet.colIdx;
   const alt = ci.alt >= 0 ? row[ci.alt] : '';
-  if (alt) return Addr.normalize(alt);
+  if (alt) return Addr.canonicalize(alt);
   const jibun = ci.jibunResult >= 0 ? row[ci.jibunResult] : '';
-  if (jibun) return Addr.normalize(jibun);
+  if (jibun) return Addr.canonicalize(jibun);
   const road = ci.roadResult >= 0 ? row[ci.roadResult] : '';
-  if (road) return Addr.normalize(road);
+  if (road) return Addr.canonicalize(road);
   const sojaeji = ci.sojaeji >= 0 ? row[ci.sojaeji] : '';
-  return Addr.normalize(sojaeji);
+  return Addr.canonicalize(sojaeji);
 }
 
 /**
