@@ -87,6 +87,7 @@ const ALT_METHODS = [
   '사전',
   '장소검색(자동)', '장소검색(선택)', '장소검색(관할밖선택)', '장소검색(VWorld자동)',
   '장소검색(이름일치자동)', '장소검색(VWorld이름일치자동)',
+  '인접지번(선택)',
   '수동지정',
 ];
 const isAltMethod = (m) => ALT_METHODS.indexOf(m) !== -1;
@@ -505,9 +506,54 @@ async function geocodeAddressUncached(addr) {
         };
       }
     }
+
+    // --- 인접 지번 폴백 (±3) ---
+    // 정확한 지번으로 전혀 못 찾았을 때만 시도한다. 지번이 순차적으로 붙어
+    // 있다고 실제 필지 위치가 인접하다는 보장은 없으므로, 몇 건이 나오든
+    // 절대 자동 확정하지 않고 항상 검수 목록으로 넘긴다.
+    // 도로명 건물번호에도 그대로 적용된다 (rebuildWithBunji 가 road 를 살린다).
+    if (SETTINGS.bunjiFallback && parsed.bunji) {
+      const neighbors = Addr.bunjiNeighbors(parsed.bunji);
+      const found = [];
+      for (const nb of neighbors) {
+        const candAddr = Addr.rebuildWithBunji(parsed, nb.bunji);
+
+        if (vworldOn) {
+          const rv = await window.VWorld.getcoord(candAddr, 'PARCEL');
+          noteAttempt(addr, 'vworld:인접지번', candAddr, rv.state);
+          if (rv.state === 'ok') {
+            found.push({
+              bunji: nb.bunji, diff: nb.diff,
+              x: rv.lon, y: rv.lat, crs: rv.crs,
+              jibun: rv.refinedText, road: '',
+            });
+            continue;
+          }
+        }
+        const rk = await callKakaoWithRetry('address', candAddr);
+        noteApiResult(rk.state);
+        noteAttempt(addr, 'kakao:인접지번', candAddr, rk.state);
+        if (rk.state === 'ok') {
+          const t = rk.data[0];
+          found.push({
+            bunji: nb.bunji, diff: nb.diff,
+            x: t.x, y: t.y,
+            jibun: t.address ? t.address.address_name : '',
+            road: t.road_address ? t.road_address.address_name : '',
+          });
+        }
+      }
+      if (found.length) {
+        return { status: 'bunji-fallback', candidates: found, originalBunji: parsed.bunji };
+      }
+    }
   }
 
   // --- 장소검색 경로 ---
+  if (!SETTINGS.placeFallback) {
+    return { status: 'fail', outside: outside, reason: '검색 결과 없음' };
+  }
+
   // 주소검색 경로였다가 전부 실패한 경우에도 한 번 더 시도한다.
   // 예전에는 이때 노이즈가 낀 원본을 그대로 던져서 사실상 반드시 0건이었다
   // ('경기도 고양시 일산서구 민원 킨텍스로240'). 지명(rest)이 없어
@@ -862,6 +908,13 @@ $('startBtn').addEventListener('click', async () => {
           outside: r.outside || [], resolved: false, reason: '후보 여러 건',
         });
         fail++; sheet.stats.fail++;
+      } else if (r.status === 'bunji-fallback') {
+        reviewList.push({
+          sheetIdx, rowIndex, address: addr, candidates: null,
+          bunjiCandidates: r.candidates, originalBunji: r.originalBunji,
+          outside: [], resolved: false, reason: '인접 지번 후보',
+        });
+        fail++; sheet.stats.fail++;
       } else {
         reviewList.push({
           sheetIdx, rowIndex, address: addr, candidates: null,
@@ -938,7 +991,9 @@ $('reasonFilter').addEventListener('change', renderFailList);
 
 /** '후보 여러 건'과 '결과 없음' 계열(검색 결과 없음 / 관할 내 결과 없음)을 구분한다. */
 function reasonCategory(item) {
-  return item.reason === '후보 여러 건' ? 'multi' : 'none';
+  if (item.reason === '후보 여러 건') return 'multi';
+  if (item.reason === '인접 지번 후보') return 'bunji';
+  return 'none';
 }
 
 /** 검수 목록의 시트 필터를 채운다 (처리한 시트가 2개 이상일 때만 노출) */
