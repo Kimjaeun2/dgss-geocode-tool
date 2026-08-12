@@ -504,9 +504,15 @@ async function geocodeAddressUncached(addr) {
   }
 
   // --- 장소검색 경로 ---
-  // 주소검색 경로였다가 전부 실패한 경우에도 원본 문자열로 한 번 더 시도한다.
+  // 주소검색 경로였다가 전부 실패한 경우에도 한 번 더 시도한다.
+  // 예전에는 이때 노이즈가 낀 원본을 그대로 던져서 사실상 반드시 0건이었다
+  // ('경기도 고양시 일산서구 민원 킨텍스로240'). 지명(rest)이 없어
+  // keywordCandidates 가 빈 배열을 주는 정형 주소가 전부 이 경로를 탄다.
+  // 재조립본을 먼저 시도하고, 원본은 뒤에 남겨 최후의 수단으로만 쓴다.
   const keywords = Addr.keywordCandidates(parsed);
-  const queries = keywords.length ? keywords : [Addr.normalize(addr)];
+  const queries = [];
+  (keywords.length ? keywords : [Addr.rebuild(parsed), Addr.normalize(addr)])
+    .forEach((q) => { if (q && queries.indexOf(q) === -1) queries.push(q); });
 
   for (const v of queries) {
     const r = await callKakaoWithRetry('place', v);
