@@ -1035,10 +1035,12 @@ function renderFailList() {
 
     const outsideCount = (item.outside || []).length;
     const outsideBadge = outsideCount ? `<span class="badge-outside">관할 밖 ${outsideCount}</span>` : '';
+    const bunjiBadge = item.bunjiCandidates
+      ? `<span class="badge-bunji">인접지번 후보 ${item.bunjiCandidates.length}</span>` : '';
     const sheetBadge = sheets.length > 1
       ? `<span class="badge-sheet">${escapeHtml(sheets[item.sheetIdx].name)}</span>` : '';
 
-    li.innerHTML = `${sheetBadge}<span class="addr"></span><span class="reason">${escapeHtml(item.reason)}</span>${outsideBadge}`;
+    li.innerHTML = `${sheetBadge}<span class="addr"></span><span class="reason">${escapeHtml(item.reason)}</span>${outsideBadge}${bunjiBadge}`;
     li.querySelector('.addr').textContent = item.address; // XSS 방지: 주소는 textContent 로
     li.onclick = () => selectItem(idx);
     ul.appendChild(li);
@@ -1062,7 +1064,8 @@ function selectItem(idx) {
   $('searchBox').value = item.address;
 
   // 배치 단계에서 이미 후보를 받아둔 경우 API를 다시 부르지 않고 그대로 보여준다.
-  if (item.candidates) showCandidates(item.candidates, item.address, item.outside);
+  if (item.bunjiCandidates) showBunjiCandidates(item.bunjiCandidates, item.originalBunji);
+  else if (item.candidates) showCandidates(item.candidates, item.address, item.outside);
   else if (item.outside && item.outside.length) showCandidates([], item.address, item.outside);
   else runKeywordSearch(item.address);
 }
@@ -1165,6 +1168,41 @@ function showCandidates(data, keyword, outside) {
 }
 
 /**
+ * 인접 지번(±3) 폴백 후보를 보여준다. showCandidates 와 달리 후보가 1건이어도
+ * 절대 자동 확정하지 않는다 — 지번이 가깝다고 실제 필지가 인접하다는 보장이
+ * 없으므로 반드시 사람이 지도에서 확인하고 클릭해야 한다.
+ */
+function showBunjiCandidates(candidates, originalBunji) {
+  const ul = $('searchResults');
+  ul.innerHTML = '';
+
+  const head = document.createElement('li');
+  head.className = 'bunji-head';
+  head.textContent =
+    `원래 지번(${originalBunji})을 찾지 못해 인접 지번 후보를 보여줍니다. ` +
+    `실제 위치가 맞는지 지도로 확인한 뒤 선택하세요.`;
+  ul.appendChild(head);
+
+  candidates.forEach((c) => {
+    const li = document.createElement('li');
+    li.className = 'bunji-item';
+    li.textContent = `${c.bunji} (원래 지번과 ${c.diff} 차이) - ${c.road || c.jibun || '(주소 정보 없음)'}`;
+    li.onclick = () => {
+      map.setCenter(new kakao.maps.LatLng(c.y, c.x));
+      map.setLevel(3);
+      saveCoord(c.x, c.y, { jibun: c.jibun, road: c.road, usedQuery: c.bunji, crs: c.crs }, '인접지번(선택)');
+    };
+    ul.appendChild(li);
+  });
+
+  const first = candidates[0];
+  if (first) {
+    map.setCenter(new kakao.maps.LatLng(first.y, first.x));
+    map.setLevel(3);
+  }
+}
+
+/**
  * 지도/후보에서 확정한 좌표를 기록한다.
  * 같은 원본 주소를 가진 미해결 항목은 시트를 넘나들며 한 번에 반영한다 —
  * '한뫼공원주변' 이 3개 시트 12행에 있으면 클릭 한 번으로 12행이 끝난다.
@@ -1182,6 +1220,7 @@ function saveCoord(lon, lat, info, method) {
     jibun: info ? info.jibun : '',
     road: info ? info.road : '',
     usedQuery: info ? info.usedQuery : '',
+    crs: info ? info.crs : undefined,
     original: active.address,
   };
 

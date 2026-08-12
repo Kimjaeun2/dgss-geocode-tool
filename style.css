@@ -171,3 +171,28 @@ button.danger:hover { background: #a51111; }
 
 /* 사전 처리 건수 */
 .summary .dict { color: #6a1b9a; }
+
+/* 인접 지번 후보 배지 */
+.badge-bunji {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-size: 11px;
+  font-weight: bold;
+}
+.search-results .bunji-head {
+  padding: 8px;
+  margin-bottom: 6px;
+  background: #fff8e1;
+  color: #7a5c00;
+  font-size: 12px;
+  cursor: default;
+  border-radius: 4px;
+}
+.search-results .bunji-item {
+  background: #f3f8ff;
+  color: #0d47a1;
+}
