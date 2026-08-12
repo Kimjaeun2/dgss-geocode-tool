@@ -70,6 +70,19 @@ function toProjected(lon, lat) {
 }
 function round(v, d) { const p = Math.pow(10, d); return Math.round(v * p) / p; }
 
+/**
+ * VWorld getcoord 는 요청한 crs로 이미 좌표를 돌려줄 수 있다 (targetCrs와
+ * 같은 crs로 요청한 경우). 이때는 proj4로 다시 변환하면 안 된다 — 이미
+ * 목표 좌표계인 값을 "WGS84 경위도"로 착각해 재변환하면 완전히 틀어진다.
+ * crs가 없거나(카카오/사전 출처) targetCrs와 다르면 기존처럼 WGS84 기준으로 변환한다.
+ */
+function toOutputXY(lon, lat, crs) {
+  if (crs && crs === targetCrs) {
+    return { x: round(parseFloat(lon), 4), y: round(parseFloat(lat), 4) };
+  }
+  return toProjected(lon, lat);
+}
+
 // ====== 결과 컬럼 이름 ======
 // 기존 수작업 '_작업' 시트와 컬럼 구조를 동일하게 맞춘다. '지오코딩 안된 주소 보충'
 // 은 예전 컬럼명을 그대로 쓰되, 내용은 검색 쿼리가 아니라 실제로 확정된 주소를
@@ -472,7 +485,7 @@ async function geocodeAddressUncached(addr) {
 
       for (const vq of vqueries) {
         for (const t of ['PARCEL', 'ROAD']) {
-          const r = await window.VWorld.getcoord(vq, t);
+          const r = await window.VWorld.getcoord(vq, t, targetCrs);
           noteAttempt(addr, 'vworld:' + t, vq, r.state);
           // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
           // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
@@ -521,7 +534,7 @@ async function geocodeAddressUncached(addr) {
         const candAddr = Addr.rebuildWithBunji(parsed, nb.bunji);
 
         if (vworldOn) {
-          const rv = await window.VWorld.getcoord(candAddr, 'PARCEL');
+          const rv = await window.VWorld.getcoord(candAddr, 'PARCEL', targetCrs);
           noteAttempt(addr, 'vworld:인접지번', candAddr, rv.state);
           if (rv.state === 'ok') {
             found.push({
@@ -815,7 +828,7 @@ function ensureServices() {
  */
 function writeRow(sheet, row, o) {
   const ci = sheet.colIdx;
-  const proj = toProjected(o.lon, o.lat);
+  const proj = toOutputXY(o.lon, o.lat, o.crs);
   row[ci.x] = proj.x;
   row[ci.y] = proj.y;
   if (o.jibun) row[ci.jibunResult] = o.jibun;
