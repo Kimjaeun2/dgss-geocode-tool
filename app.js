@@ -57,6 +57,10 @@ CRS_LIST.forEach((c) => { if (c.def) proj4.defs(c.code, c.def); });
 
 let targetCrs = 'EPSG:2097';
 
+/* 대체주소(지명형 장소검색 / 인접 지번) 사용 여부. startBtn 클릭 시 체크박스 값으로 갱신된다.
+   기본값 true 는 지금까지의 동작(항상 폴백 시도)을 그대로 유지하기 위함이다. */
+let SETTINGS = { placeFallback: true, bunjiFallback: true };
+
 /** API가 준 WGS84 경도/위도를 선택된 좌표계로 변환 */
 function toProjected(lon, lat) {
   const lo = parseFloat(lon), la = parseFloat(lat);
@@ -790,6 +794,8 @@ $('startBtn').addEventListener('click', async () => {
   ensureServices();
   targetCrs = $('crsSelect').value;
   DEBUG.enabled = $('debugMode').checked;
+  SETTINGS.placeFallback = $('allowPlaceFallback').checked;
+  SETTINGS.bunjiFallback = $('allowBunjiFallback').checked;
 
   stopRequested = false;
   reviewList = [];

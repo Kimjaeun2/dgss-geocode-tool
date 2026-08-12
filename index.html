@@ -107,6 +107,17 @@
     </div>
     <div id="crsResult" class="crs-result"></div>
     <div class="field">
+      <label>대체주소 사용 여부</label>
+      <label class="checkbox">
+        <input type="checkbox" id="allowPlaceFallback" checked>
+        지명형 주소(공원·시설명 등)를 장소검색으로 대체주소 찾기
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="allowBunjiFallback" checked>
+        정확한 지번을 못 찾으면 인접 지번(±3)을 대체주소 후보로 찾기 — 자동 확정되지 않고 항상 검수 목록에서 직접 확인 후 선택합니다
+      </label>
+    </div>
+    <div class="field">
       <label>진단</label>
       <label class="checkbox">
         <input type="checkbox" id="debugMode">
