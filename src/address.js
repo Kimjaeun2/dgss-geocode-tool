@@ -297,6 +297,21 @@
     pushUniq(out, stripParen(spaced));
     pushUniq(out, dropExtraBunji(base));
     pushUniq(out, dropExtraBunji(stripParen(base)));
+
+    // 시군구와 실제 주소 사이에 낀 무관한 단어('민원 킨텍스로240')는 위 변형들이
+    // 전부 못 지운다 — 전부 원본 문자열 기반 치환일 뿐, 구조를 모르기 때문이다.
+    // parse() 는 이 노이즈 단어를 구조 판정 시 이미 건너뛰므로, 그 결과로
+    // 재조립한 변형을 추가한다. 번지가 확정된 경우에만 의미가 있다.
+    var p = parse(addr);
+    if (p.bunji) {
+      var parts = [];
+      if (p.sido) parts.push(p.sido);
+      if (p.sgg) parts.push(p.sgg);
+      if (p.emd) parts.push(p.emd);
+      if (p.road) parts.push(p.road);
+      parts.push(p.bunji);
+      pushUniq(out, parts.join(' '));
+    }
     return out;
   }
 
@@ -313,12 +328,73 @@
     return out;
   }
 
+  /**
+   * parse() 가 읽어낸 구조를 정형 주소 문자열로 재조립한다.
+   * canonicalize() 와 달리 시·도를 축약하지 않고 rest(지명)도 붙이지 않는다 —
+   * 이건 "같은 주소인가?" 판정용이 아니라 지오코더에 보낼 검색어를 만드는 용도다.
+   * parse() 가 노이즈 단어('민원' 등)를 이미 건너뛰었으므로, 이 결과는 원본에
+   * 섞여 있던 참고메모가 제거된 깨끗한 주소가 된다.
+   */
+  function rebuild(parsed) {
+    if (!parsed) return '';
+    var parts = [];
+    if (parsed.sido) parts.push(parsed.sido);
+    if (parsed.sgg) parts.push(parsed.sgg);
+    if (parsed.emd) parts.push(parsed.emd);
+    if (parsed.road) parts.push(parsed.road);
+    if (parsed.bunji) parts.push(parsed.bunji);
+    return parts.join(' ');
+  }
+
+  /** 지번 문자열에서 끝의 숫자 조각(부번, 없으면 본번)과 그 앞부분을 분리한다.
+   * '130-4' -> {head:'130-', num:4}, '130' -> {head:'', num:130},
+   * '산 12-3' -> {head:'산 12-', num:3} */
+  function splitLastNumber(bunji) {
+    var m = String(bunji).match(/^(.*?)(\d+)$/);
+    if (!m) return null;
+    return { head: m[1], num: parseInt(m[2], 10) };
+  }
+
+  /**
+   * 번지의 마지막 숫자 조각(부번이 있으면 부번, 없으면 본번)을 ±1~±3 범위에서
+   * 바꾼 이웃 지번을 가까운 순서로 만든다. 0 이하가 되는 후보는 제외한다.
+   * 정확한 지번 검색이 실패했을 때만 쓰는 후보 생성기다.
+   *
+   * 주의: 지번이 순차적으로 붙어 있다고 해서 실제 필지 위치가 인접하다는
+   * 보장은 전혀 없다(분필·합필 이력에 따라 다르다). 여기서 만든 후보는
+   * "검색해볼 값"일 뿐이며, 최종 채택은 반드시 사람이 지도에서 확인해야 한다
+   * — 이 함수를 쓰는 쪽(app.js)은 절대 자동 확정하면 안 된다.
+   */
+  function bunjiNeighbors(bunji) {
+    if (!bunji) return [];
+    var s = splitLastNumber(bunji);
+    if (!s) return [];
+    var out = [];
+    [1, 2, 3].forEach(function (d) {
+      if (s.num - d > 0) out.push({ bunji: s.head + (s.num - d), diff: d });
+      out.push({ bunji: s.head + (s.num + d), diff: d });
+    });
+    return out;
+  }
+
+  /** rebuild() 와 같되 번지만 다른 값으로 바꿔 재조립한다. */
+  function rebuildWithBunji(parsed, bunji) {
+    if (!parsed) return '';
+    return rebuild({
+      sido: parsed.sido, sgg: parsed.sgg, emd: parsed.emd,
+      road: parsed.road, bunji: bunji
+    });
+  }
+
   global.Addr = {
     normalize: normalize,
     canonicalize: canonicalize,
     parse: parse,
     route: route,
+    rebuild: rebuild,
     addressVariants: addressVariants,
-    keywordCandidates: keywordCandidates
+    keywordCandidates: keywordCandidates,
+    bunjiNeighbors: bunjiNeighbors,
+    rebuildWithBunji: rebuildWithBunji
   };
 })(window);

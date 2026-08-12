@@ -57,6 +57,10 @@ CRS_LIST.forEach((c) => { if (c.def) proj4.defs(c.code, c.def); });
 
 let targetCrs = 'EPSG:2097';
 
+/* 대체주소(지명형 장소검색 / 인접 지번) 사용 여부. startBtn 클릭 시 체크박스 값으로 갱신된다.
+   기본값 true 는 지금까지의 동작(항상 폴백 시도)을 그대로 유지하기 위함이다. */
+let SETTINGS = { placeFallback: true, bunjiFallback: true };
+
 /** API가 준 WGS84 경도/위도를 선택된 좌표계로 변환 */
 function toProjected(lon, lat) {
   const lo = parseFloat(lon), la = parseFloat(lat);
@@ -65,6 +69,19 @@ function toProjected(lon, lat) {
   return { x: round(x, 4), y: round(y, 4) };
 }
 function round(v, d) { const p = Math.pow(10, d); return Math.round(v * p) / p; }
+
+/**
+ * VWorld getcoord 는 요청한 crs로 이미 좌표를 돌려줄 수 있다 (targetCrs와
+ * 같은 crs로 요청한 경우). 이때는 proj4로 다시 변환하면 안 된다 — 이미
+ * 목표 좌표계인 값을 "WGS84 경위도"로 착각해 재변환하면 완전히 틀어진다.
+ * crs가 없거나(카카오/사전 출처) targetCrs와 다르면 기존처럼 WGS84 기준으로 변환한다.
+ */
+function toOutputXY(lon, lat, crs) {
+  if (crs && crs === targetCrs) {
+    return { x: round(parseFloat(lon), 4), y: round(parseFloat(lat), 4) };
+  }
+  return toProjected(lon, lat);
+}
 
 // ====== 결과 컬럼 이름 ======
 // 기존 수작업 '_작업' 시트와 컬럼 구조를 동일하게 맞춘다. '지오코딩 안된 주소 보충'
@@ -83,6 +100,7 @@ const ALT_METHODS = [
   '사전',
   '장소검색(자동)', '장소검색(선택)', '장소검색(관할밖선택)', '장소검색(VWorld자동)',
   '장소검색(이름일치자동)', '장소검색(VWorld이름일치자동)',
+  '인접지번(선택)',
   '수동지정',
 ];
 const isAltMethod = (m) => ALT_METHODS.indexOf(m) !== -1;
@@ -122,6 +140,20 @@ function noteApiResult(state) {
   } else {
     consecutiveErrors = 0;
   }
+}
+
+// ====== 진단 로그 ======
+// "안 된다"만 알고 어디서 안 되는지 모르는 상태를 없애기 위한 기록이다.
+// 어떤 프로바이더에 어떤 검색어를 던져 어떤 결과가 나왔는지 그대로 남긴다.
+const DEBUG = { enabled: false, log: [] };
+// ponytail: 상한 없는 배열은 대량 처리(2000행 x 시도 10회)에서 메모리를 먹는다.
+// 5만 건에서 끊는다 — 진단은 앞부분만 봐도 원인 판별에 충분하다.
+const DEBUG_LIMIT = 50000;
+
+/** 지오코딩 시도 1회를 기록한다. 진단 모드가 꺼져 있으면 아무것도 하지 않는다. */
+function noteAttempt(original, provider, query, state) {
+  if (!DEBUG.enabled || DEBUG.log.length >= DEBUG_LIMIT) return;
+  DEBUG.log.push({ original: original, provider: provider, query: query, state: state });
 }
 
 let map = null, marker = null, geocoder = null, places = null;
@@ -175,6 +207,7 @@ function resetRun() {
   consecutiveErrors = 0;
   breakerTripped = false;
   geocodeCache.clear(); // 다시 실행할 때는 이전 결과를 재사용하지 않고 새로 시도
+  DEBUG.log = [];
   sheets.forEach((s) => { s.processed = false; s.stats = null; s.colIdx = null; });
   $('startBtn').disabled = false;
   $('step-progress').classList.add('hidden');
@@ -287,6 +320,8 @@ function populateColumnSelects(header) {
   fill('colRoad', true, false);
   fill('colX', false, true);
   fill('colY', false, true);
+  fill('insertAfterCol', true, false);
+  $('insertAfterCol').options[0].textContent = '(기본값) 지번/도로명 주소 컬럼 바로 뒤';
 
   autoGuess(header, 'colJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
   autoGuess(header, 'colRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
@@ -439,21 +474,33 @@ async function geocodeAddressUncached(addr) {
     // VWorld 를 키가 있을 때 먼저 시도한다 (지번 -> 도로명 순). 어떤 표기인지
     // 미리 알 수 없어 둘 다 시도하되, 실패해도 카카오로 계속 진행한다.
     if (vworldOn) {
-      for (const t of ['PARCEL', 'ROAD']) {
-        const r = await window.VWorld.getcoord(addr, t);
-        // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
-        // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
-        // 하는데, 여기서 카운트하면 VWorld만 잠깐 죽어도 카카오는 멀쩡한데
-        // 전체 작업이 멈춰버린다.
-        if (r.state === 'ok') {
-          return {
-            status: 'ok',
-            method: t === 'PARCEL' ? '주소검색(VWorld:지번)' : '주소검색(VWorld:도로명)',
-            lon: r.lon, lat: r.lat,
-            jibun: t === 'PARCEL' ? r.refinedText : '',
-            road: t === 'ROAD' ? r.refinedText : '',
-            usedQuery: addr,
-          };
+      // VWorld 는 정형 주소만 받는 엔진이라 '민원' 같은 노이즈가 낀 원본으로는
+      // 반드시 실패한다. 예전에는 원본만 넘기고 있어서, parse() 가 구조를 이미
+      // 읽어냈는데도 VWorld 는 깨끗한 주소를 볼 기회가 없었다.
+      // 재조립본이 원본과 같으면 중복 제거되어 호출 횟수는 그대로다.
+      const vqueries = [];
+      [Addr.normalize(addr), Addr.rebuild(parsed)].forEach((q) => {
+        if (q && vqueries.indexOf(q) === -1) vqueries.push(q);
+      });
+
+      for (const vq of vqueries) {
+        for (const t of ['PARCEL', 'ROAD']) {
+          const r = await window.VWorld.getcoord(vq, t, targetCrs);
+          noteAttempt(addr, 'vworld:' + t, vq, r.state);
+          // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
+          // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
+          // 하는데, 여기서 카운트하면 VWorld만 잠깐 죽어도 카카오는 멀쩡한데
+          // 전체 작업이 멈춰버린다.
+          if (r.state === 'ok') {
+            return {
+              status: 'ok',
+              method: t === 'PARCEL' ? '주소검색(VWorld:지번)' : '주소검색(VWorld:도로명)',
+              lon: r.lon, lat: r.lat, crs: r.crs,
+              jibun: t === 'PARCEL' ? r.refinedText : '',
+              road: t === 'ROAD' ? r.refinedText : '',
+              usedQuery: vq,
+            };
+          }
         }
       }
     }
@@ -461,6 +508,7 @@ async function geocodeAddressUncached(addr) {
     for (const v of Addr.addressVariants(addr)) {
       const r = await callKakaoWithRetry('address', v);
       noteApiResult(r.state);
+      noteAttempt(addr, 'kakao:address', v, r.state);
       if (r.state === 'ok') {
         const t = r.data[0];
         return {
@@ -473,16 +521,68 @@ async function geocodeAddressUncached(addr) {
         };
       }
     }
+
+    // --- 인접 지번 폴백 (±3) ---
+    // 정확한 지번으로 전혀 못 찾았을 때만 시도한다. 지번이 순차적으로 붙어
+    // 있다고 실제 필지 위치가 인접하다는 보장은 없으므로, 몇 건이 나오든
+    // 절대 자동 확정하지 않고 항상 검수 목록으로 넘긴다.
+    // 도로명 건물번호에도 그대로 적용된다 (rebuildWithBunji 가 road 를 살린다).
+    if (SETTINGS.bunjiFallback && parsed.bunji) {
+      const neighbors = Addr.bunjiNeighbors(parsed.bunji);
+      const found = [];
+      for (const nb of neighbors) {
+        const candAddr = Addr.rebuildWithBunji(parsed, nb.bunji);
+
+        if (vworldOn) {
+          const rv = await window.VWorld.getcoord(candAddr, 'PARCEL', targetCrs);
+          noteAttempt(addr, 'vworld:인접지번', candAddr, rv.state);
+          if (rv.state === 'ok') {
+            found.push({
+              bunji: nb.bunji, diff: nb.diff,
+              x: rv.lon, y: rv.lat, crs: rv.crs,
+              jibun: rv.refinedText, road: '',
+            });
+            continue;
+          }
+        }
+        const rk = await callKakaoWithRetry('address', candAddr);
+        noteApiResult(rk.state);
+        noteAttempt(addr, 'kakao:인접지번', candAddr, rk.state);
+        if (rk.state === 'ok') {
+          const t = rk.data[0];
+          found.push({
+            bunji: nb.bunji, diff: nb.diff,
+            x: t.x, y: t.y,
+            jibun: t.address ? t.address.address_name : '',
+            road: t.road_address ? t.road_address.address_name : '',
+          });
+        }
+      }
+      if (found.length) {
+        return { status: 'bunji-fallback', candidates: found, originalBunji: parsed.bunji };
+      }
+    }
   }
 
   // --- 장소검색 경로 ---
-  // 주소검색 경로였다가 전부 실패한 경우에도 원본 문자열로 한 번 더 시도한다.
+  if (!SETTINGS.placeFallback) {
+    return { status: 'fail', outside: outside, reason: '검색 결과 없음' };
+  }
+
+  // 주소검색 경로였다가 전부 실패한 경우에도 한 번 더 시도한다.
+  // 예전에는 이때 노이즈가 낀 원본을 그대로 던져서 사실상 반드시 0건이었다
+  // ('경기도 고양시 일산서구 민원 킨텍스로240'). 지명(rest)이 없어
+  // keywordCandidates 가 빈 배열을 주는 정형 주소가 전부 이 경로를 탄다.
+  // 재조립본을 먼저 시도하고, 원본은 뒤에 남겨 최후의 수단으로만 쓴다.
   const keywords = Addr.keywordCandidates(parsed);
-  const queries = keywords.length ? keywords : [Addr.normalize(addr)];
+  const queries = [];
+  (keywords.length ? keywords : [Addr.rebuild(parsed), Addr.normalize(addr)])
+    .forEach((q) => { if (q && queries.indexOf(q) === -1) queries.push(q); });
 
   for (const v of queries) {
     const r = await callKakaoWithRetry('place', v);
     noteApiResult(r.state);
+    noteAttempt(addr, 'kakao:place', v, r.state);
     if (r.state !== 'ok') continue;
 
     const inside = [];
@@ -520,6 +620,7 @@ async function geocodeAddressUncached(addr) {
   if (vworldOn) {
     for (const v of queries) {
       const r = await window.VWorld.search(v);
+      noteAttempt(addr, 'vworld:place', v, r.state);
       // getcoord 와 같은 이유로 VWorld 오류는 차단기에 반영하지 않는다.
       if (r.state !== 'ok') continue;
 
@@ -664,6 +765,7 @@ function prepareAllSheets() {
   const roadName = selectedColumnName('colRoad', null);
   const xName = selectedColumnName('colX', 'colXNewName');
   const yName = selectedColumnName('colY', 'colYNewName');
+  const insertAfterName = selectedColumnName('insertAfterCol', null); // '' 면 기본 동작
 
   if (!jibunName && !roadName) {
     alert('지번주소 또는 도로명주소 컬럼 중 하나는 선택해야 합니다.'); return false;
@@ -685,8 +787,12 @@ function prepareAllSheets() {
     // 새 컬럼들을 주소 컬럼 바로 뒤에 끼워넣고 나머지 원본 컬럼을 오른쪽으로 민다.
     const originalLen = s.aoa[0].length;
 
+    // 사용자가 삽입 위치를 지정했지만 이 시트에 그 이름의 컬럼이 없으면(다중
+    // 시트 헤더 불일치) -1이 되어 기본 동작(지번/도로명 뒤)으로 자동 대체된다.
+    const insertAfter = insertAfterName ? findColumn(s, insertAfterName) : -1;
+
     s.colIdx = {
-      jibun, road, originalLen,
+      jibun, road, originalLen, insertAfter,
       sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
       locx: findOrCreateColumn(s, COL_LOCX),
       alt: findOrCreateColumn(s, COL_ALT),
@@ -722,7 +828,7 @@ function ensureServices() {
  */
 function writeRow(sheet, row, o) {
   const ci = sheet.colIdx;
-  const proj = toProjected(o.lon, o.lat);
+  const proj = toOutputXY(o.lon, o.lat, o.crs);
   row[ci.x] = proj.x;
   row[ci.y] = proj.y;
   if (o.jibun) row[ci.jibunResult] = o.jibun;
@@ -753,6 +859,9 @@ $('startBtn').addEventListener('click', async () => {
   if (!prepareAllSheets()) return;
   ensureServices();
   targetCrs = $('crsSelect').value;
+  DEBUG.enabled = $('debugMode').checked;
+  SETTINGS.placeFallback = $('allowPlaceFallback').checked;
+  SETTINGS.bunjiFallback = $('allowBunjiFallback').checked;
 
   stopRequested = false;
   reviewList = [];
@@ -817,6 +926,13 @@ $('startBtn').addEventListener('click', async () => {
         reviewList.push({
           sheetIdx, rowIndex, address: addr, candidates: r.candidates,
           outside: r.outside || [], resolved: false, reason: '후보 여러 건',
+        });
+        fail++; sheet.stats.fail++;
+      } else if (r.status === 'bunji-fallback') {
+        reviewList.push({
+          sheetIdx, rowIndex, address: addr, candidates: null,
+          bunjiCandidates: r.candidates, originalBunji: r.originalBunji,
+          outside: [], resolved: false, reason: '인접 지번 후보',
         });
         fail++; sheet.stats.fail++;
       } else {
@@ -895,7 +1011,9 @@ $('reasonFilter').addEventListener('change', renderFailList);
 
 /** '후보 여러 건'과 '결과 없음' 계열(검색 결과 없음 / 관할 내 결과 없음)을 구분한다. */
 function reasonCategory(item) {
-  return item.reason === '후보 여러 건' ? 'multi' : 'none';
+  if (item.reason === '후보 여러 건') return 'multi';
+  if (item.reason === '인접 지번 후보') return 'bunji';
+  return 'none';
 }
 
 /** 검수 목록의 시트 필터를 채운다 (처리한 시트가 2개 이상일 때만 노출) */
@@ -937,10 +1055,12 @@ function renderFailList() {
 
     const outsideCount = (item.outside || []).length;
     const outsideBadge = outsideCount ? `<span class="badge-outside">관할 밖 ${outsideCount}</span>` : '';
+    const bunjiBadge = item.bunjiCandidates
+      ? `<span class="badge-bunji">인접지번 후보 ${item.bunjiCandidates.length}</span>` : '';
     const sheetBadge = sheets.length > 1
       ? `<span class="badge-sheet">${escapeHtml(sheets[item.sheetIdx].name)}</span>` : '';
 
-    li.innerHTML = `${sheetBadge}<span class="addr"></span><span class="reason">${escapeHtml(item.reason)}</span>${outsideBadge}`;
+    li.innerHTML = `${sheetBadge}<span class="addr"></span><span class="reason">${escapeHtml(item.reason)}</span>${outsideBadge}${bunjiBadge}`;
     li.querySelector('.addr').textContent = item.address; // XSS 방지: 주소는 textContent 로
     li.onclick = () => selectItem(idx);
     ul.appendChild(li);
@@ -964,7 +1084,8 @@ function selectItem(idx) {
   $('searchBox').value = item.address;
 
   // 배치 단계에서 이미 후보를 받아둔 경우 API를 다시 부르지 않고 그대로 보여준다.
-  if (item.candidates) showCandidates(item.candidates, item.address, item.outside);
+  if (item.bunjiCandidates) showBunjiCandidates(item.bunjiCandidates, item.originalBunji);
+  else if (item.candidates) showCandidates(item.candidates, item.address, item.outside);
   else if (item.outside && item.outside.length) showCandidates([], item.address, item.outside);
   else runKeywordSearch(item.address);
 }
@@ -1067,6 +1188,41 @@ function showCandidates(data, keyword, outside) {
 }
 
 /**
+ * 인접 지번(±3) 폴백 후보를 보여준다. showCandidates 와 달리 후보가 1건이어도
+ * 절대 자동 확정하지 않는다 — 지번이 가깝다고 실제 필지가 인접하다는 보장이
+ * 없으므로 반드시 사람이 지도에서 확인하고 클릭해야 한다.
+ */
+function showBunjiCandidates(candidates, originalBunji) {
+  const ul = $('searchResults');
+  ul.innerHTML = '';
+
+  const head = document.createElement('li');
+  head.className = 'bunji-head';
+  head.textContent =
+    `원래 지번(${originalBunji})을 찾지 못해 인접 지번 후보를 보여줍니다. ` +
+    `실제 위치가 맞는지 지도로 확인한 뒤 선택하세요.`;
+  ul.appendChild(head);
+
+  candidates.forEach((c) => {
+    const li = document.createElement('li');
+    li.className = 'bunji-item';
+    li.textContent = `${c.bunji} (원래 지번과 ${c.diff} 차이) - ${c.road || c.jibun || '(주소 정보 없음)'}`;
+    li.onclick = () => {
+      map.setCenter(new kakao.maps.LatLng(c.y, c.x));
+      map.setLevel(3);
+      saveCoord(c.x, c.y, { jibun: c.jibun, road: c.road, usedQuery: c.bunji, crs: c.crs }, '인접지번(선택)');
+    };
+    ul.appendChild(li);
+  });
+
+  const first = candidates[0];
+  if (first) {
+    map.setCenter(new kakao.maps.LatLng(first.y, first.x));
+    map.setLevel(3);
+  }
+}
+
+/**
  * 지도/후보에서 확정한 좌표를 기록한다.
  * 같은 원본 주소를 가진 미해결 항목은 시트를 넘나들며 한 번에 반영한다 —
  * '한뫼공원주변' 이 3개 시트 12행에 있으면 클릭 한 번으로 12행이 끝난다.
@@ -1084,6 +1240,7 @@ function saveCoord(lon, lat, info, method) {
     jibun: info ? info.jibun : '',
     road: info ? info.road : '',
     usedQuery: info ? info.usedQuery : '',
+    crs: info ? info.crs : undefined,
     original: active.address,
   };
 
@@ -1203,7 +1360,7 @@ function dedupeRows(sheet) {
 function reorderForOutput(sheet) {
   const ci = sheet.colIdx;
   const originalLen = ci.originalLen;
-  const insertPoint = Math.max(ci.jibun, ci.road) + 1;
+  const insertPoint = (ci.insertAfter >= 0 ? ci.insertAfter : Math.max(ci.jibun, ci.road)) + 1;
 
   const candidates = [ci.sojaeji, ci.locx, ci.alt, ci.x, ci.y, ci.jibunResult, ci.roadResult];
   const newCols = candidates.filter((idx) => idx >= originalLen);
@@ -1296,6 +1453,16 @@ $('downloadBtn').addEventListener('click', () => {
     used.add(dn2);
     outNames.push(dn2);
     outSheets[dn2] = XLSX.utils.aoa_to_sheet(dedupRows);
+  }
+
+  // 진단 로그 (진단 모드로 실행한 경우에만 쌓인다)
+  if (DEBUG.log.length) {
+    const dbgRows = [['원본주소', '프로바이더', '검색어', '결과']];
+    DEBUG.log.forEach((e) => dbgRows.push([e.original, e.provider, e.query, e.state]));
+    const dn3 = uniqueName('진단로그', used);
+    used.add(dn3);
+    outNames.push(dn3);
+    outSheets[dn3] = XLSX.utils.aoa_to_sheet(dbgRows);
   }
 
   // 처리 요약

@@ -302,6 +302,11 @@ test('canonicalize — 구조를 전혀 못 읽는 문자열은 공백 정리만
   eq(Addr.canonicalize('그냥 아무 텍스트'), Addr.normalize('그냥 아무 텍스트'), 'fallback');
 });
 
+test('addressVariants — 시군구와 실제 주소 사이에 낀 노이즈 단어를 뺀 변형이 포함된다 (실제 데이터에서 검색 실패 확인 후 추가, 회귀)', function () {
+  var v = Addr.addressVariants('경기도 고양시 일산서구 민원 킨텍스로240');
+  contains(v, '경기도 고양시 일산서구 킨텍스로 240', '노이즈 단어(민원)가 빠진 변형 포함');
+});
+
 test('canonicalize — 번지가 같아도 뒤 지명이 다르면 다른 키다 (중복제거 과잉 병합 방지, 회귀)', function () {
   var bare = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23');
   var named = Addr.canonicalize('경기도 고양시 일산서구 송산로464-23 농가주택주변');
@@ -321,4 +326,71 @@ test('parse — 참고메모 괄호가 문자열 중간에 있어도 뒤에 이�
   eq(p2.bunji, '220-10', 'bunji — 괄호를 지우면서 숫자가 섞이지 않아야 함 (220-105 아님)');
   eq(p2.rest, '5회', 'rest');
   eq(Addr.route(p2), 'address', 'route');
+});
+
+test('rebuild — 노이즈 단어를 뺀 정형 주소를 재조립한다 (실측 결함 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구  민원 킨텍스로240');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구 킨텍스로 240', "'민원' 이 빠지고 번지가 분리된다");
+});
+
+test('rebuild — 읍면동 + 번지', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 대화동 2600');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구 대화동 2600', '그대로 재조립');
+});
+
+test('rebuild — 지명(rest)은 포함하지 않는다', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 한뫼공원주변');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구', 'rest 와 suffix 는 빠진다');
+});
+
+test('rebuild — 빈 파싱 결과는 빈 문자열', function () {
+  eq(Addr.rebuild(Addr.parse('')), '', '빈 입력');
+  eq(Addr.rebuild(null), '', 'null 입력');
+});
+
+test('bunjiNeighbors — 부번이 있으면 부번만 가까운 순서로 바꾼다', function () {
+  eq(Addr.bunjiNeighbors('130-4'), [
+    { bunji: '130-3', diff: 1 }, { bunji: '130-5', diff: 1 },
+    { bunji: '130-2', diff: 2 }, { bunji: '130-6', diff: 2 },
+    { bunji: '130-1', diff: 3 }, { bunji: '130-7', diff: 3 }
+  ], '130-4 이웃 6개, 가까운 차이부터');
+});
+
+test('bunjiNeighbors — 0 이하가 되는 후보는 제외한다', function () {
+  eq(Addr.bunjiNeighbors('130-2'), [
+    { bunji: '130-1', diff: 1 }, { bunji: '130-3', diff: 1 },
+    { bunji: '130-4', diff: 2 }, { bunji: '130-5', diff: 3 }
+  ], '130-2-2=0, 130-2-3=-1 은 제외되고 나머지만 남는다');
+});
+
+test('bunjiNeighbors — 부번이 없으면 본번을 바꾼다', function () {
+  eq(Addr.bunjiNeighbors('130'), [
+    { bunji: '129', diff: 1 }, { bunji: '131', diff: 1 },
+    { bunji: '128', diff: 2 }, { bunji: '132', diff: 2 },
+    { bunji: '127', diff: 3 }, { bunji: '133', diff: 3 }
+  ], '본번 130 이웃');
+});
+
+test('bunjiNeighbors — 산 번지도 처리한다', function () {
+  eq(Addr.bunjiNeighbors('산 12-3'), [
+    { bunji: '산 12-2', diff: 1 }, { bunji: '산 12-4', diff: 1 },
+    { bunji: '산 12-1', diff: 2 }, { bunji: '산 12-5', diff: 2 },
+    { bunji: '산 12-6', diff: 3 }
+  ], '산 12-3-3=0 은 제외, 나머지 5개');
+});
+
+test('bunjiNeighbors — 빈 값은 빈 배열', function () {
+  eq(Addr.bunjiNeighbors(''), [], '빈 문자열');
+  eq(Addr.bunjiNeighbors(null), [], 'null');
+});
+
+test('rebuildWithBunji — 행정구역은 두고 번지만 교체한다', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 대화동 130-4');
+  eq(Addr.rebuildWithBunji(p, '130-3'), '경기도 고양시 일산서구 대화동 130-3', '번지만 교체');
+});
+
+test('rebuildWithBunji — 도로명 건물번호도 교체된다 (킨텍스로 케이스)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구  민원 킨텍스로240');
+  eq(Addr.rebuildWithBunji(p, '237'), '경기도 고양시 일산서구 킨텍스로 237',
+     '노이즈가 빠진 채로 건물번호만 교체된다');
 });
