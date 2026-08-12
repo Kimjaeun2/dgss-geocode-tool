@@ -454,21 +454,33 @@ async function geocodeAddressUncached(addr) {
     // VWorld 를 키가 있을 때 먼저 시도한다 (지번 -> 도로명 순). 어떤 표기인지
     // 미리 알 수 없어 둘 다 시도하되, 실패해도 카카오로 계속 진행한다.
     if (vworldOn) {
-      for (const t of ['PARCEL', 'ROAD']) {
-        const r = await window.VWorld.getcoord(addr, t);
-        // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
-        // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
-        // 하는데, 여기서 카운트하면 VWorld만 잠깐 죽어도 카카오는 멀쩡한데
-        // 전체 작업이 멈춰버린다.
-        if (r.state === 'ok') {
-          return {
-            status: 'ok',
-            method: t === 'PARCEL' ? '주소검색(VWorld:지번)' : '주소검색(VWorld:도로명)',
-            lon: r.lon, lat: r.lat,
-            jibun: t === 'PARCEL' ? r.refinedText : '',
-            road: t === 'ROAD' ? r.refinedText : '',
-            usedQuery: addr,
-          };
+      // VWorld 는 정형 주소만 받는 엔진이라 '민원' 같은 노이즈가 낀 원본으로는
+      // 반드시 실패한다. 예전에는 원본만 넘기고 있어서, parse() 가 구조를 이미
+      // 읽어냈는데도 VWorld 는 깨끗한 주소를 볼 기회가 없었다.
+      // 재조립본이 원본과 같으면 중복 제거되어 호출 횟수는 그대로다.
+      const vqueries = [];
+      [Addr.normalize(addr), Addr.rebuild(parsed)].forEach((q) => {
+        if (q && vqueries.indexOf(q) === -1) vqueries.push(q);
+      });
+
+      for (const vq of vqueries) {
+        for (const t of ['PARCEL', 'ROAD']) {
+          const r = await window.VWorld.getcoord(vq, t);
+          noteAttempt(addr, 'vworld:' + t, vq, r.state);
+          // VWorld 오류는 연속 오류 차단기에 반영하지 않는다 — VWorld는 보조
+          // 프로바이더라 서버 장애(502 등)가 있어도 카카오로 계속 진행해야
+          // 하는데, 여기서 카운트하면 VWorld만 잠깐 죽어도 카카오는 멀쩡한데
+          // 전체 작업이 멈춰버린다.
+          if (r.state === 'ok') {
+            return {
+              status: 'ok',
+              method: t === 'PARCEL' ? '주소검색(VWorld:지번)' : '주소검색(VWorld:도로명)',
+              lon: r.lon, lat: r.lat, crs: r.crs,
+              jibun: t === 'PARCEL' ? r.refinedText : '',
+              road: t === 'ROAD' ? r.refinedText : '',
+              usedQuery: vq,
+            };
+          }
         }
       }
     }

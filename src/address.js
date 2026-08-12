@@ -328,11 +328,30 @@
     return out;
   }
 
+  /**
+   * parse() 가 읽어낸 구조를 정형 주소 문자열로 재조립한다.
+   * canonicalize() 와 달리 시·도를 축약하지 않고 rest(지명)도 붙이지 않는다 —
+   * 이건 "같은 주소인가?" 판정용이 아니라 지오코더에 보낼 검색어를 만드는 용도다.
+   * parse() 가 노이즈 단어('민원' 등)를 이미 건너뛰었으므로, 이 결과는 원본에
+   * 섞여 있던 참고메모가 제거된 깨끗한 주소가 된다.
+   */
+  function rebuild(parsed) {
+    if (!parsed) return '';
+    var parts = [];
+    if (parsed.sido) parts.push(parsed.sido);
+    if (parsed.sgg) parts.push(parsed.sgg);
+    if (parsed.emd) parts.push(parsed.emd);
+    if (parsed.road) parts.push(parsed.road);
+    if (parsed.bunji) parts.push(parsed.bunji);
+    return parts.join(' ');
+  }
+
   global.Addr = {
     normalize: normalize,
     canonicalize: canonicalize,
     parse: parse,
     route: route,
+    rebuild: rebuild,
     addressVariants: addressVariants,
     keywordCandidates: keywordCandidates
   };

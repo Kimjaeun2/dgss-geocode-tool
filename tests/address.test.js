@@ -327,3 +327,23 @@ test('parse — 참고메모 괄호가 문자열 중간에 있어도 뒤에 이�
   eq(p2.rest, '5회', 'rest');
   eq(Addr.route(p2), 'address', 'route');
 });
+
+test('rebuild — 노이즈 단어를 뺀 정형 주소를 재조립한다 (실측 결함 회귀)', function () {
+  var p = Addr.parse('경기도 고양시 일산서구  민원 킨텍스로240');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구 킨텍스로 240', "'민원' 이 빠지고 번지가 분리된다");
+});
+
+test('rebuild — 읍면동 + 번지', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 대화동 2600');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구 대화동 2600', '그대로 재조립');
+});
+
+test('rebuild — 지명(rest)은 포함하지 않는다', function () {
+  var p = Addr.parse('경기도 고양시 일산서구 한뫼공원주변');
+  eq(Addr.rebuild(p), '경기도 고양시 일산서구', 'rest 와 suffix 는 빠진다');
+});
+
+test('rebuild — 빈 파싱 결과는 빈 문자열', function () {
+  eq(Addr.rebuild(Addr.parse('')), '', '빈 입력');
+  eq(Addr.rebuild(null), '', 'null 입력');
+});
