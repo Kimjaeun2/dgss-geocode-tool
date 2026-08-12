@@ -307,6 +307,8 @@ function populateColumnSelects(header) {
   fill('colRoad', true, false);
   fill('colX', false, true);
   fill('colY', false, true);
+  fill('insertAfterCol', true, false);
+  $('insertAfterCol').options[0].textContent = '(기본값) 지번/도로명 주소 컬럼 바로 뒤';
 
   autoGuess(header, 'colJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
   autoGuess(header, 'colRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
@@ -750,6 +752,7 @@ function prepareAllSheets() {
   const roadName = selectedColumnName('colRoad', null);
   const xName = selectedColumnName('colX', 'colXNewName');
   const yName = selectedColumnName('colY', 'colYNewName');
+  const insertAfterName = selectedColumnName('insertAfterCol', null); // '' 면 기본 동작
 
   if (!jibunName && !roadName) {
     alert('지번주소 또는 도로명주소 컬럼 중 하나는 선택해야 합니다.'); return false;
@@ -771,8 +774,12 @@ function prepareAllSheets() {
     // 새 컬럼들을 주소 컬럼 바로 뒤에 끼워넣고 나머지 원본 컬럼을 오른쪽으로 민다.
     const originalLen = s.aoa[0].length;
 
+    // 사용자가 삽입 위치를 지정했지만 이 시트에 그 이름의 컬럼이 없으면(다중
+    // 시트 헤더 불일치) -1이 되어 기본 동작(지번/도로명 뒤)으로 자동 대체된다.
+    const insertAfter = insertAfterName ? findColumn(s, insertAfterName) : -1;
+
     s.colIdx = {
-      jibun, road, originalLen,
+      jibun, road, originalLen, insertAfter,
       sojaeji: findOrCreateColumn(s, COL_SOJAEJI),
       locx: findOrCreateColumn(s, COL_LOCX),
       alt: findOrCreateColumn(s, COL_ALT),
@@ -1340,7 +1347,7 @@ function dedupeRows(sheet) {
 function reorderForOutput(sheet) {
   const ci = sheet.colIdx;
   const originalLen = ci.originalLen;
-  const insertPoint = Math.max(ci.jibun, ci.road) + 1;
+  const insertPoint = (ci.insertAfter >= 0 ? ci.insertAfter : Math.max(ci.jibun, ci.road)) + 1;
 
   const candidates = [ci.sojaeji, ci.locx, ci.alt, ci.x, ci.y, ci.jibunResult, ci.roadResult];
   const newCols = candidates.filter((idx) => idx >= originalLen);
