@@ -124,6 +124,20 @@ function noteApiResult(state) {
   }
 }
 
+// ====== 진단 로그 ======
+// "안 된다"만 알고 어디서 안 되는지 모르는 상태를 없애기 위한 기록이다.
+// 어떤 프로바이더에 어떤 검색어를 던져 어떤 결과가 나왔는지 그대로 남긴다.
+const DEBUG = { enabled: false, log: [] };
+// ponytail: 상한 없는 배열은 대량 처리(2000행 x 시도 10회)에서 메모리를 먹는다.
+// 5만 건에서 끊는다 — 진단은 앞부분만 봐도 원인 판별에 충분하다.
+const DEBUG_LIMIT = 50000;
+
+/** 지오코딩 시도 1회를 기록한다. 진단 모드가 꺼져 있으면 아무것도 하지 않는다. */
+function noteAttempt(original, provider, query, state) {
+  if (!DEBUG.enabled || DEBUG.log.length >= DEBUG_LIMIT) return;
+  DEBUG.log.push({ original: original, provider: provider, query: query, state: state });
+}
+
 let map = null, marker = null, geocoder = null, places = null;
 
 const $ = (id) => document.getElementById(id);
@@ -175,6 +189,7 @@ function resetRun() {
   consecutiveErrors = 0;
   breakerTripped = false;
   geocodeCache.clear(); // 다시 실행할 때는 이전 결과를 재사용하지 않고 새로 시도
+  DEBUG.log = [];
   sheets.forEach((s) => { s.processed = false; s.stats = null; s.colIdx = null; });
   $('startBtn').disabled = false;
   $('step-progress').classList.add('hidden');
@@ -461,6 +476,7 @@ async function geocodeAddressUncached(addr) {
     for (const v of Addr.addressVariants(addr)) {
       const r = await callKakaoWithRetry('address', v);
       noteApiResult(r.state);
+      noteAttempt(addr, 'kakao:address', v, r.state);
       if (r.state === 'ok') {
         const t = r.data[0];
         return {
@@ -483,6 +499,7 @@ async function geocodeAddressUncached(addr) {
   for (const v of queries) {
     const r = await callKakaoWithRetry('place', v);
     noteApiResult(r.state);
+    noteAttempt(addr, 'kakao:place', v, r.state);
     if (r.state !== 'ok') continue;
 
     const inside = [];
@@ -520,6 +537,7 @@ async function geocodeAddressUncached(addr) {
   if (vworldOn) {
     for (const v of queries) {
       const r = await window.VWorld.search(v);
+      noteAttempt(addr, 'vworld:place', v, r.state);
       // getcoord 와 같은 이유로 VWorld 오류는 차단기에 반영하지 않는다.
       if (r.state !== 'ok') continue;
 
@@ -753,6 +771,7 @@ $('startBtn').addEventListener('click', async () => {
   if (!prepareAllSheets()) return;
   ensureServices();
   targetCrs = $('crsSelect').value;
+  DEBUG.enabled = $('debugMode').checked;
 
   stopRequested = false;
   reviewList = [];
@@ -1296,6 +1315,16 @@ $('downloadBtn').addEventListener('click', () => {
     used.add(dn2);
     outNames.push(dn2);
     outSheets[dn2] = XLSX.utils.aoa_to_sheet(dedupRows);
+  }
+
+  // 진단 로그 (진단 모드로 실행한 경우에만 쌓인다)
+  if (DEBUG.log.length) {
+    const dbgRows = [['원본주소', '프로바이더', '검색어', '결과']];
+    DEBUG.log.forEach((e) => dbgRows.push([e.original, e.provider, e.query, e.state]));
+    const dn3 = uniqueName('진단로그', used);
+    used.add(dn3);
+    outNames.push(dn3);
+    outSheets[dn3] = XLSX.utils.aoa_to_sheet(dbgRows);
   }
 
   // 처리 요약
