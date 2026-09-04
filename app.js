@@ -19,6 +19,7 @@ if (typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) missing
 if (typeof Addr === 'undefined') missingLibs.push('src/address.js');
 if (typeof Gate === 'undefined') missingLibs.push('src/gate.js');
 if (typeof Dict === 'undefined') missingLibs.push('src/dictionary.js');
+if (typeof Pnu === 'undefined') missingLibs.push('src/pnu.js');
 
 if (missingLibs.length) {
   const box = document.getElementById('uploadStatus');
