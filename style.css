@@ -61,6 +61,48 @@ header .sub { margin: 0; font-size: 13px; opacity: 0.82; }
 main { max-width: 980px; margin: 28px auto; padding: 0 16px 72px; }
 
 /* ==========================================================================
+   상단 단계바
+   ========================================================================== */
+.stepper {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; max-width: 980px; margin: 0 auto; padding: 14px 16px;
+  background: rgba(255,255,255,.92); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.stepper-item {
+  display: flex; align-items: center; gap: 8px; padding: 4px 14px;
+  cursor: pointer; white-space: nowrap; position: relative;
+}
+.stepper-item:not(:last-child)::after {
+  content: ""; position: absolute; right: -2px; top: 50%; width: 26px; height: 2px;
+  background: var(--border); transform: translateY(-50%);
+}
+.stepper-item.done:not(:last-child)::after { background: var(--success); }
+
+.stepper-num {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: var(--border); color: var(--text-subtle);
+  transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+.stepper-label { font-size: 12.5px; font-weight: 600; color: var(--text-subtle); }
+
+.stepper-item.locked { cursor: default; }
+.stepper-item.current .stepper-num {
+  background: var(--primary-600); color: #fff; transform: scale(1.15);
+}
+.stepper-item.current .stepper-label { color: var(--primary-700); font-weight: 700; }
+.stepper-item.done .stepper-num { background: var(--success); color: #fff; }
+.stepper-item.done .stepper-label { color: var(--success); }
+
+@media (max-width: 640px) {
+  .stepper-label { display: none; }
+  .stepper-item { padding: 4px 10px; }
+}
+
+/* ==========================================================================
    카드 / 단계 배지
    ========================================================================== */
 .card {

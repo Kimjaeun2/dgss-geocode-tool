@@ -40,6 +40,10 @@
   <p class="sub">엑셀 업로드 → 주소검색·장소검색 자동 지오코딩 → 남은 건은 지도에서 보정 → 엑셀 다운로드</p>
 </header>
 
+<!-- 상단 단계바: 아래 카드들의 hidden 클래스 상태만 읽어 표시한다.
+     app.js의 흐름/상태는 전혀 건드리지 않는 순수 표시용 내비게이션. -->
+<nav class="stepper" id="stepper" aria-label="진행 단계"></nav>
+
 <main>
   <!-- 1단계: 파일 업로드 -->
   <section class="card" id="step-upload">
@@ -246,5 +250,66 @@
 </main>
 
 <script src="app.js"></script>
+<script>
+/* 상단 단계바: 아래 카드들의 class="hidden" 상태를 관찰만 하는 순수 표시용
+   내비게이션. app.js의 상태/흐름은 전혀 읽거나 쓰지 않는다 — 관찰(observe)만
+   한다. 클릭하면 이미 열려 있는 카드로 스크롤만 해준다(잠긴 단계는 무시). */
+(function () {
+  'use strict';
+  var GROUPS = [
+    { ids: ['step-upload'], label: '업로드' },
+    { ids: ['step-mapping', 'step-dict', 'step-crs'], label: '설정' },
+    { ids: ['step-progress'], label: '진행' },
+    { ids: ['step-fail'], label: '보정' },
+    { ids: ['step-download'], label: '다운로드' }
+  ];
+  var nav = document.getElementById('stepper');
+  if (!nav) return;
+
+  GROUPS.forEach(function (g, i) {
+    var item = document.createElement('div');
+    item.className = 'stepper-item';
+    item.innerHTML =
+      '<span class="stepper-num">' + (i + 1) + '</span>' +
+      '<span class="stepper-label">' + g.label + '</span>';
+    item.addEventListener('click', function () {
+      var target = null;
+      for (var j = 0; j < g.ids.length; j++) {
+        var el = document.getElementById(g.ids[j]);
+        if (el && !el.classList.contains('hidden')) { target = el; break; }
+      }
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    nav.appendChild(item);
+  });
+
+  var items = nav.querySelectorAll('.stepper-item');
+
+  function update() {
+    var lastVisible = -1;
+    GROUPS.forEach(function (g, i) {
+      var anyVisible = g.ids.some(function (id) {
+        var el = document.getElementById(id);
+        return el && !el.classList.contains('hidden');
+      });
+      if (anyVisible) lastVisible = i;
+    });
+    GROUPS.forEach(function (g, i) {
+      items[i].classList.toggle('done', i < lastVisible);
+      items[i].classList.toggle('current', i === lastVisible);
+      items[i].classList.toggle('locked', i > lastVisible || lastVisible === -1);
+    });
+  }
+
+  update();
+  var observer = new MutationObserver(update);
+  GROUPS.forEach(function (g) {
+    g.ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+  });
+})();
+</script>
 </body>
 </html>
