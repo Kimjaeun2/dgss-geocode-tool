@@ -1,198 +1,279 @@
+/* ==========================================================================
+   디자인 토큰
+   ========================================================================== */
+:root {
+  --primary-900: #101a33;
+  --primary-700: #1e3a6e;
+  --primary-600: #24488a;
+  --primary-500: #2f5aa8;
+  --primary-100: #e8eef8;
+
+  --success: #2b8a3e;
+  --success-bg: #ebfbee;
+  --danger: #c92a2a;
+  --danger-bg: #fff0f0;
+  --warn: #e8590c;
+  --warn-bg: #fff4e6;
+  --info: #1971c2;
+  --info-bg: #e7f5ff;
+  --purple: #6a1b9a;
+  --purple-bg: #f3f0ff;
+
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-muted: #fafbfc;
+  --border: #e1e5eb;
+  --border-strong: #ccd2db;
+  --text: #1a1d24;
+  --text-muted: #5b6472;
+  --text-subtle: #8a93a3;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-md: 0 6px 16px rgba(16, 24, 40, .06);
+
+  --font: "Pretendard Variable", Pretendard, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+}
+
+/* ==========================================================================
+   기본 레이아웃
+   ========================================================================== */
 * { box-sizing: border-box; }
 body {
-  font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-  background: #f4f6f8; margin: 0; color: #222;
+  font-family: var(--font);
+  background: var(--bg);
+  margin: 0;
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
-header { background: #2b4c7e; color: #fff; padding: 20px 32px; }
-header h1 { margin: 0 0 4px; font-size: 20px; }
-header .sub { margin: 0; font-size: 13px; opacity: 0.85; }
 
-main { max-width: 980px; margin: 24px auto; padding: 0 16px 60px; }
+header {
+  background: linear-gradient(135deg, var(--primary-900), var(--primary-700));
+  color: #fff;
+  padding: 28px 32px;
+}
+header h1 { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -0.01em; }
+header .sub { margin: 0; font-size: 13px; opacity: 0.82; }
 
+main { max-width: 980px; margin: 28px auto; padding: 0 16px 72px; }
+
+/* ==========================================================================
+   카드 / 단계 배지
+   ========================================================================== */
 .card {
-  background: #fff; border: 1px solid #e0e3e7; border-radius: 8px;
-  padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 26px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s ease;
 }
-.card h2 { margin-top: 0; font-size: 16px; color: #2b4c7e; }
+.card:not(.hidden):hover { box-shadow: var(--shadow-md); }
+
+.card h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.step-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.step-badge.sub { background: var(--primary-100); color: var(--primary-700); }
+
+/* 도로명 -> 지번/PNU 변환: 흐름 밖 독립 기능이므로 시각적으로 구분한다 */
+#step-pnu {
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-muted);
+}
+#step-pnu h2 { color: var(--primary-700); }
+
 .hidden { display: none; }
 
+/* ==========================================================================
+   배지 / 상태 텍스트
+   ========================================================================== */
 .badge {
-  font-size: 12px; font-weight: normal; color: #555;
-  background: #eef1f5; border-radius: 10px; padding: 2px 10px; margin-left: 8px;
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--primary-100); border-radius: 999px; padding: 3px 10px; margin-left: 6px;
 }
 .badge-warn {
-  font-size: 11px; color: #fff; background: #e8590c;
-  border-radius: 10px; padding: 2px 8px; margin-left: 6px; vertical-align: middle;
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--warn);
+  border-radius: 999px; padding: 3px 9px; margin-left: 6px; vertical-align: middle;
 }
 
-.field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 12px; color: #555; }
-select, input[type=text] {
-  padding: 8px 10px; border: 1px solid #ccd2d8; border-radius: 4px; font-size: 13px;
-}
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
-.checkbox { font-size: 12px; color: #555; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.status { margin-top: 10px; font-size: 12.5px; color: var(--text-muted); }
+.status.warn { color: var(--danger); font-weight: 600; }
 
+/* ==========================================================================
+   폼 요소
+   ========================================================================== */
+.field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+
+select, input[type=text], input[type=file] {
+  padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: 13px; font-family: inherit; background: var(--surface); color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+select:focus, input[type=text]:focus {
+  outline: none; border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+.checkbox {
+  font-size: 12.5px; color: var(--text-muted); display: inline-flex; align-items: center;
+  gap: 7px; margin-bottom: 8px; cursor: pointer;
+}
+
+/* ==========================================================================
+   버튼
+   ========================================================================== */
 button {
-  background: #2b4c7e; color: #fff; border: none; border-radius: 4px;
-  padding: 10px 18px; font-size: 13px; cursor: pointer;
+  background: var(--primary-600); color: #fff; border: none; border-radius: var(--radius-sm);
+  padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: background .15s ease, transform .05s ease;
 }
-button:hover { background: #1f3a61; }
-button:disabled { background: #aab2bb; cursor: not-allowed; }
-button.secondary { background: #495057; }
-button.secondary:hover { background: #343a40; }
-button.danger { background: #c92a2a; padding: 6px 14px; }
+button:hover { background: var(--primary-700); }
+button:active { transform: translateY(1px); }
+button:disabled { background: #c1c7d0; cursor: not-allowed; }
+button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); }
+button.secondary:hover { background: var(--surface-muted); }
+button.danger { background: var(--danger); padding: 7px 16px; }
 button.danger:hover { background: #a51111; }
+button + button { margin-left: 8px; }
 
-.status { margin-top: 10px; font-size: 12px; color: #666; }
-.status.warn { color: #c92a2a; }
+/* ==========================================================================
+   좌표계 확인 테이블
+   ========================================================================== */
+.crs-result { margin: 14px 0; }
+.crs-table { border-collapse: collapse; font-size: 12.5px; width: 100%; max-width: 480px; }
+.crs-table th, .crs-table td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+.crs-table th { background: var(--surface-muted); font-weight: 700; }
+.crs-table tr.best { background: var(--success-bg); font-weight: 700; color: var(--success); }
 
-.crs-result { margin: 12px 0; }
-.crs-table { border-collapse: collapse; font-size: 12px; width: 100%; max-width: 480px; }
-.crs-table th, .crs-table td { border: 1px solid #e0e3e7; padding: 6px 10px; text-align: left; }
-.crs-table th { background: #f1f3f5; }
-.crs-table tr.best { background: #ebfbee; font-weight: bold; color: #2b8a3e; }
+/* ==========================================================================
+   진행률
+   ========================================================================== */
+.progress-wrap { display: flex; align-items: center; gap: 14px; }
+.progress-bar { flex: 1; height: 10px; background: var(--border); border-radius: 999px; overflow: hidden; }
+#progressFill { height: 100%; width: 0%; background: var(--success); transition: width 0.2s ease; }
+.summary { margin-top: 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.summary .ok { color: var(--success); font-weight: 600; }
+.summary .place { color: var(--purple); font-weight: 600; }
+.summary .dict { color: var(--purple); font-weight: 600; }
+.summary .skip { color: var(--info); font-weight: 600; }
+.summary .fail { color: var(--danger); font-weight: 600; }
 
-.progress-wrap { display: flex; align-items: center; gap: 12px; }
-.progress-bar { flex: 1; height: 10px; background: #e5e8eb; border-radius: 5px; overflow: hidden; }
-#progressFill { height: 100%; width: 0%; background: #2b8a3e; transition: width 0.2s; }
-.summary { margin-top: 10px; font-size: 13px; }
-.summary span { margin-right: 16px; }
-.summary .ok { color: #2b8a3e; }
-.summary .place { color: #7048e8; }
-.summary .skip { color: #1c7ed6; }
-.summary .fail { color: #c92a2a; }
+.hint { font-size: 12.5px; color: var(--text-subtle); margin-top: -6px; margin-bottom: 12px; line-height: 1.65; }
 
-.hint { font-size: 12px; color: #777; margin-top: -4px; line-height: 1.6; }
-
-.fail-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; margin-top: 8px; }
+/* ==========================================================================
+   미해결 목록 / 지도
+   ========================================================================== */
+.fail-layout { display: grid; grid-template-columns: 300px 1fr; gap: 18px; margin-top: 10px; }
 .fail-list {
   list-style: none; margin: 0; padding: 0; max-height: 480px;
-  overflow-y: auto; border: 1px solid #e0e3e7; border-radius: 6px;
+  overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-md);
 }
 .fail-list li {
-  padding: 9px 12px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 13px;
-  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 13px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px;
+  display: flex; flex-direction: column; gap: 3px; transition: background .1s ease;
 }
-.fail-list li:hover { background: #f0f4f9; }
-.fail-list li.active { background: #dbe6f6; font-weight: bold; }
-.fail-list li.resolved { color: #2b8a3e; }
+.fail-list li:last-child { border-bottom: none; }
+.fail-list li:hover { background: var(--primary-100); }
+.fail-list li.active { background: var(--primary-100); font-weight: 700; box-shadow: inset 3px 0 0 var(--primary-600); }
+.fail-list li.resolved { color: var(--success); }
 .fail-list li.resolved .addr::after { content: " ✓"; }
-.fail-list .reason { font-size: 11px; color: #999; font-weight: normal; }
+.fail-list .reason { font-size: 11px; color: var(--text-subtle); font-weight: normal; }
+
+/* 도로명->지번/PNU 실패 목록은 지도 보정이 없는 확인용 목록이므로 클릭 가능해 보이지 않게 한다 */
+#pnuFailList li { cursor: default; }
+#pnuFailList li:hover { background: none; }
 
 .map-panel .field { flex-direction: row; margin-bottom: 8px; }
 .map-panel input[type=text] { flex: 1; }
-#map { width: 100%; height: 380px; border: 1px solid #ccd2d8; border-radius: 6px; }
-.search-results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 150px; overflow-y: auto; }
+#map { width: 100%; height: 380px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+.search-results { list-style: none; margin: 10px 0 0; padding: 0; max-height: 150px; overflow-y: auto; }
 .search-results li {
-  padding: 8px 10px; border: 1px solid #eee; border-radius: 4px;
-  margin-bottom: 4px; cursor: pointer; font-size: 12px;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  margin-bottom: 4px; cursor: pointer; font-size: 12.5px; transition: background .1s ease;
 }
-.search-results li:hover { background: #f0f4f9; }
+.search-results li:hover { background: var(--primary-100); }
 .search-results li.auto-picked {
-  color: #2b8a3e; font-weight: bold; cursor: default; background: #ebfbee;
+  color: var(--success); font-weight: 700; cursor: default; background: var(--success-bg);
 }
-.search-results li.auto-picked:hover { background: #ebfbee; }
+.search-results li.auto-picked:hover { background: var(--success-bg); }
 
 /* 관할 밖 후보 표시 */
 .badge-outside {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: #fff3e0;
-  color: #e65100;
-  font-size: 11px;
-  font-weight: bold;
+  display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 700;
 }
 .search-results .outside-head {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #ccc;
-  color: #e65100;
-  font-size: 12px;
-  cursor: default;
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-strong);
+  color: var(--warn); font-size: 12px; cursor: default;
 }
-.search-results .outside-item {
-  background: #fff8f0;
-  color: #8d4b00;
-}
-.search-results li.auto-picked:hover { background: #ebfbee; }
-
-/* 관할 밖 후보 표시 */
-.badge-outside {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: #fff3e0;
-  color: #e65100;
-  font-size: 11px;
-  font-weight: bold;
-}
-.search-results .outside-head {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #ccc;
-  color: #e65100;
-  font-size: 12px;
-  cursor: default;
-}
-.search-results .outside-item {
-  background: #fff8f0;
-  color: #8d4b00;
-}
-/* 여러 시트 선택 */
-.sheet-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  max-height: 160px;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fafafa;
-}
-.sheet-item { white-space: nowrap; }
-.sheet-progress { margin-top: 10px; }
-
-/* 검수 목록의 시트 배지 */
-.badge-sheet {
-  display: inline-block;
-  margin-right: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: #e3f2fd;
-  color: #0d47a1;
-  font-size: 11px;
-  font-weight: bold;
-}
-
-/* 사전 처리 건수 */
-.summary .dict { color: #6a1b9a; }
+.search-results .outside-item { background: var(--warn-bg); color: #8d4b00; }
 
 /* 인접 지번 후보 배지 */
 .badge-bunji {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: #e3f2fd;
-  color: #0d47a1;
-  font-size: 11px;
-  font-weight: bold;
+  display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px;
+  background: var(--info-bg); color: var(--info); font-size: 11px; font-weight: 700;
 }
 .search-results .bunji-head {
-  padding: 8px;
-  margin-bottom: 6px;
-  background: #fff8e1;
-  color: #7a5c00;
-  font-size: 12px;
-  cursor: default;
-  border-radius: 4px;
+  padding: 9px; margin-bottom: 8px; background: #fff8e1; color: #7a5c00;
+  font-size: 12px; cursor: default; border-radius: var(--radius-sm);
 }
-.search-results .bunji-item {
-  background: #f3f8ff;
-  color: #0d47a1;
+.search-results .bunji-item { background: var(--info-bg); color: var(--info); }
+
+/* ==========================================================================
+   여러 시트 선택
+   ========================================================================== */
+.sheet-list {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; max-height: 160px; overflow-y: auto;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.sheet-item { white-space: nowrap; }
+.sheet-progress { margin-top: 12px; }
+
+/* 검수 목록의 시트 배지 */
+.badge-sheet {
+  display: inline-block; margin-right: 6px; padding: 2px 7px; border-radius: 999px;
+  background: var(--info-bg); color: var(--info); font-size: 11px; font-weight: 700;
+}
+
+/* ==========================================================================
+   반응형
+   ========================================================================== */
+@media (max-width: 720px) {
+  header { padding: 20px 18px; }
+  main { padding: 0 12px 48px; margin-top: 16px; }
+  .card { padding: 16px 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+  .fail-layout { grid-template-columns: 1fr; }
+  #map { height: 280px; }
+  button { width: 100%; }
+  button + button { margin-left: 0; margin-top: 8px; }
+  .progress-wrap button { width: auto; }
 }
