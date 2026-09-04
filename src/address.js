@@ -386,6 +386,22 @@
     });
   }
 
+  /**
+   * 두 주소가 같은 필지를 가리키는지 판정한다.
+   * 문자열 완전일치 대신 parse() 로 분해한 시·군·구+읍면동+번지만 비교한다 —
+   * 시·도 축약형, 공백 같은 표기 차이를 흡수하면서 실제로 다른 필지는
+   * 정확히 걸러낸다. 반환: true(같은 필지) / false(다른 필지) / null(판정 보류).
+   */
+  function sameParcel(addrA, addrB) {
+    var key = function (addr) {
+      var p = parse(addr);
+      return [p.sgg, p.emd, p.bunji].filter(Boolean).join(' ');
+    };
+    var ka = key(addrA), kb = key(addrB);
+    if (!ka || !kb) return null;
+    return ka === kb;
+  }
+
   global.Addr = {
     normalize: normalize,
     canonicalize: canonicalize,
@@ -395,6 +411,7 @@
     addressVariants: addressVariants,
     keywordCandidates: keywordCandidates,
     bunjiNeighbors: bunjiNeighbors,
-    rebuildWithBunji: rebuildWithBunji
+    rebuildWithBunji: rebuildWithBunji,
+    sameParcel: sameParcel
   };
 })(window);

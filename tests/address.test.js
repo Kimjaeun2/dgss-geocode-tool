@@ -394,3 +394,24 @@ test('rebuildWithBunji — 도로명 건물번호도 교체된다 (킨텍스로 
   eq(Addr.rebuildWithBunji(p, '237'), '경기도 고양시 일산서구 킨텍스로 237',
      '노이즈가 빠진 채로 건물번호만 교체된다');
 });
+
+test('sameParcel — 완전히 같은 주소는 true', function () {
+  eq(Addr.sameParcel('경기도 고양시 일산서구 대화동 2600', '경기도 고양시 일산서구 대화동 2600'), true, '동일 문자열');
+});
+
+test('sameParcel — 시·도 표기 차이는 흡수한다 (경기도 vs 경기)', function () {
+  eq(Addr.sameParcel('경기도 고양시 일산서구 대화동 2600', '경기 고양시 일산서구 대화동 2600'), true, '시도 축약형 차이는 무시');
+});
+
+test('sameParcel — 번지가 실제로 다르면 false', function () {
+  eq(Addr.sameParcel('경기도 고양시 일산서구 대화동 2600', '경기도 고양시 일산서구 대화동 2601'), false, '번지 다름');
+});
+
+test('sameParcel — 읍면동이 다르면 false', function () {
+  eq(Addr.sameParcel('경기도 고양시 일산서구 대화동 2600', '경기도 고양시 일산서구 주엽동 2600'), false, '동 다름');
+});
+
+test('sameParcel — 한쪽이라도 구조를 못 읽으면 null (판정 보류)', function () {
+  eq(Addr.sameParcel('', '경기도 고양시 일산서구 대화동 2600'), null, '빈 문자열');
+  eq(Addr.sameParcel('한뫼공원', '경기도 고양시 일산서구 대화동 2600'), null, '지명형이라 sgg/emd/bunji가 전부 없음');
+});
