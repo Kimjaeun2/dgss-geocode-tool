@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>방제지리정보 주소 지오코딩 도구</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <link rel="stylesheet" href="style.css">
 <!-- 엑셀 읽기/쓰기 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -20,6 +21,7 @@
 <script src="src/address.js"></script>
 <script src="src/gate.js"></script>
 <script src="src/dictionary.js"></script>
+<script src="src/pnu.js"></script>
 <!--
   VWorld Open API 키
   주의 1: https://www.vworld.kr 에서 발급받은 인증키로 아래 값을 교체하세요.
@@ -41,14 +43,51 @@
 <main>
   <!-- 1단계: 파일 업로드 -->
   <section class="card" id="step-upload">
-    <h2>1. 엑셀 업로드</h2>
+    <h2><span class="step-badge">1</span> 엑셀 업로드</h2>
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div id="uploadStatus" class="status"></div>
   </section>
 
+  <!-- 부가 기능: 도로명 -> 지번/PNU 변환 (아래 지오코딩 단계와 완전히 독립) -->
+  <section class="card hidden" id="step-pnu">
+    <h2>도로명 → 지번/PNU 변환 <span class="badge">독립 기능</span></h2>
+    <p class="hint">
+      도로명주소는 정확한데 지번주소가 부정확하거나 모호할 때, 도로명주소를 기준으로
+      카카오 API에서 지번주소와 PNU(19자리 필지고유번호)를 뽑아 새 컬럼에 기록합니다.
+      좌표(X, Y)는 다루지 않으며, 아래 지오코딩 단계와는 별개로 동작합니다.
+    </p>
+    <div class="grid2">
+      <div class="field">
+        <label>도로명주소 컬럼</label>
+        <select id="pnuColRoad"></select>
+      </div>
+      <div class="field">
+        <label>기존 지번주소 컬럼 <span class="badge">선택 — 일치 여부 비교용</span></label>
+        <select id="pnuColJibun"><option value="">(없음)</option></select>
+      </div>
+    </div>
+    <div id="pnuNote" class="status"></div>
+    <button id="pnuStartBtn">변환 실행</button>
+    <button id="pnuStopBtn" class="danger" disabled>중지</button>
+
+    <div id="pnuProgressWrap" class="hidden">
+      <div id="pnuProgressText" class="status">0 / 0</div>
+      <div id="pnuBreakerWarning" class="status warn hidden"></div>
+    </div>
+
+    <div id="pnuFailWrap" class="hidden">
+      <h3>실패 목록 <span id="pnuFailBadge" class="badge"></span></h3>
+      <ul id="pnuFailList" class="fail-list"></ul>
+    </div>
+
+    <div id="pnuDownloadWrap" class="hidden">
+      <button id="pnuDownloadBtn">지번/PNU 결과 다운로드</button>
+    </div>
+  </section>
+
   <!-- 2단계: 시트/컬럼 매핑 -->
   <section class="card hidden" id="step-mapping">
-    <h2>2. 시트 및 컬럼 지정</h2>
+    <h2><span class="step-badge">2</span> 시트 및 컬럼 지정</h2>
     <div class="field">
       <label>처리할 시트 (여러 개 선택 가능 — 검수는 한 화면에서 한꺼번에 합니다)</label>
       <label class="checkbox"><input type="checkbox" id="sheetAll"> 전체 선택 / 해제</label>
@@ -83,7 +122,7 @@
 
   <!-- 2-2단계: 대체주소 사전 -->
   <section class="card hidden" id="step-dict">
-    <h2>2-2. 대체주소 사전 <span class="badge">선택</span></h2>
+    <h2><span class="step-badge sub">2-2</span> 대체주소 사전 <span class="badge">선택</span></h2>
     <p class="hint">
       지난번 작업에서 내려받은 사전 엑셀을 올리면, 그때 확정한 지명형 주소는
       API 호출 없이 바로 채워집니다. 처음이라면 그냥 넘어가세요.
@@ -94,7 +133,7 @@
 
   <!-- 2-1단계: 좌표계 확인 -->
   <section class="card hidden" id="step-crs">
-    <h2>2-1. 좌표계 확인 <span class="badge-warn">중요</span></h2>
+    <h2><span class="step-badge sub">2-1</span> 좌표계 확인 <span class="badge-warn">중요</span></h2>
     <p class="hint">
       카카오는 WGS84 경위도를 반환하지만 기존 시트의 X/Y는 투영좌표계(미터)입니다.
       잘못 고르면 신규 등록분만 수백 m 어긋나므로, 기존 좌표가 있는 행으로 자동 판정하는 것을 권장합니다.
@@ -142,7 +181,7 @@
 
   <!-- 3단계: 진행 상황 -->
   <section class="card hidden" id="step-progress">
-    <h2>3. 진행 상황</h2>
+    <h2><span class="step-badge">3</span> 진행 상황</h2>
     <div class="progress-wrap">
       <div class="progress-bar"><div id="progressFill"></div></div>
       <span id="progressText">0 / 0</span>
@@ -161,7 +200,7 @@
 
   <!-- 4단계: 미해결 건 보정 -->
   <section class="card hidden" id="step-fail">
-    <h2>4. 미해결 주소 보정 <span id="remainBadge" class="badge"></span></h2>
+    <h2><span class="step-badge">4</span> 미해결 주소 보정 <span id="remainBadge" class="badge"></span></h2>
     <p class="hint">항목을 클릭하면 지도에서 자동 검색됩니다. 후보를 클릭하거나 지도를 직접 클릭해 좌표를 지정하세요.</p>
     <label class="checkbox"><input type="checkbox" id="onlyUnresolved"> 미해결만 보기</label>
     <div class="field hidden" id="sheetFilterWrap" style="max-width:280px">
@@ -192,7 +231,7 @@
 
   <!-- 5단계: 다운로드 -->
   <section class="card hidden" id="step-download">
-    <h2>5. 결과 다운로드</h2>
+    <h2><span class="step-badge">5</span> 결과 다운로드</h2>
     <p class="hint">
       원본 시트는 그대로 두고 바로 뒤에 <code>_완료</code> 시트를 붙여 저장합니다
       (<code>A</code> / <code>A_완료</code> / <code>B</code> / <code>B_완료</code> 순서).

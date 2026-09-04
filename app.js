@@ -19,6 +19,7 @@ if (typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) missing
 if (typeof Addr === 'undefined') missingLibs.push('src/address.js');
 if (typeof Gate === 'undefined') missingLibs.push('src/gate.js');
 if (typeof Dict === 'undefined') missingLibs.push('src/dictionary.js');
+if (typeof Pnu === 'undefined') missingLibs.push('src/pnu.js');
 
 if (missingLibs.length) {
   const box = document.getElementById('uploadStatus');
@@ -93,6 +94,9 @@ const COL_LOCX    = 'locx';
 const COL_ALT     = '지오코딩 안된 주소 보충';
 const COL_JIBUN   = '지번';
 const COL_ROAD    = '도로명';
+const COL_PNU_JIBUN = '도로명기준지번';
+const COL_PNU_CODE  = 'PNU';
+const COL_PNU_MATCH = '지번일치여부';
 
 /* 원본 주소로는 못 찾아 다른 주소로 바꿔 넣은 경우의 매칭방식.
    이 목록에 해당할 때만 '대체주소' 컬럼을 채운다. */
@@ -108,6 +112,7 @@ const isAltMethod = (m) => ALT_METHODS.indexOf(m) !== -1;
 // ====== 전역 상태 ======
 let workbook = null;
 let originalFileName = 'geocoded.xlsx';
+let originalBaseName = 'geocoded'; // 확장자 없는 원본 파일명. PNU 결과 파일명에 사용.
 /* 시트별 상태. { name, aoa, enabled, colIdx, processed, stats } */
 let sheets = [];
 let reviewList = [];       // { sheetIdx, rowIndex, address, candidates, outside, resolved, reason }
@@ -142,6 +147,57 @@ function noteApiResult(state) {
   }
 }
 
+// ====== 도로명 -> 지번/PNU 변환 전용 상태 (기존 지오코딩과 완전히 독립) ======
+const PNU_ERROR_BREAKER_LIMIT = 10;
+let pnuConsecutiveErrors = 0;
+let pnuBreakerTripped = false;
+let pnuStopRequested = false;
+let pnuReviewList = []; // { sheetIdx, rowIndex, address, reason }
+
+/** noteApiResult 와 동일한 역할이지만 이 기능 전용 카운터·경고창을 쓴다. */
+function notePnuApiResult(state) {
+  if (state === 'error') {
+    pnuConsecutiveErrors++;
+    if (pnuConsecutiveErrors >= PNU_ERROR_BREAKER_LIMIT && !pnuBreakerTripped) {
+      pnuBreakerTripped = true;
+      pnuStopRequested = true;
+      const box = $('pnuBreakerWarning');
+      if (box) {
+        box.classList.remove('hidden');
+        box.textContent =
+          `API 오류가 연속 ${PNU_ERROR_BREAKER_LIMIT}회 발생해 자동으로 중단했습니다. ` +
+          `쿼터 소진이나 네트워크 문제일 수 있습니다 — 카카오 콘솔에서 사용량을 확인한 뒤 다시 실행해주세요.`;
+      }
+    }
+  } else {
+    pnuConsecutiveErrors = 0;
+  }
+}
+
+const pnuCache = new Map(); // 성공만 캐시한다 (실패는 재시도 여지를 남긴다)
+
+/** 도로명주소 1건을 지번주소+PNU로 변환한다. 좌표는 다루지 않는다. */
+async function convertRoadToJibunPnu(addr) {
+  if (pnuCache.has(addr)) return pnuCache.get(addr);
+  const result = await convertRoadToJibunPnuUncached(addr);
+  if (result.status === 'ok') pnuCache.set(addr, result);
+  return result;
+}
+
+async function convertRoadToJibunPnuUncached(addr) {
+  for (const v of Addr.addressVariants(addr)) {
+    const r = await callKakaoWithRetry('address', v);
+    notePnuApiResult(r.state);
+    if (r.state === 'ok') {
+      const t = r.data[0];
+      const jibun = t.address ? t.address.address_name : '';
+      if (!jibun) return { status: 'fail', reason: '지번 매핑 없음' };
+      return { status: 'ok', jibun, pnu: Pnu.buildPnu(t.address) };
+    }
+  }
+  return { status: 'fail', reason: '검색 결과 없음' };
+}
+
 // ====== 진단 로그 ======
 // "안 된다"만 알고 어디서 안 되는지 모르는 상태를 없애기 위한 기록이다.
 // 어떤 프로바이더에 어떤 검색어를 던져 어떤 결과가 나왔는지 그대로 남긴다.
@@ -171,6 +227,7 @@ $('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   originalFileName = file.name.replace(/\.(xlsx|xls)$/i, '') + '_geocoded.xlsx';
+  originalBaseName = file.name.replace(/\.(xlsx|xls)$/i, '');
 
   const reader = new FileReader();
   reader.onload = (evt) => {
@@ -195,6 +252,7 @@ $('fileInput').addEventListener('change', (e) => {
     $('step-mapping').classList.remove('hidden');
     $('step-dict').classList.remove('hidden');
     $('step-crs').classList.remove('hidden');
+    $('step-pnu').classList.remove('hidden');
   };
   reader.readAsArrayBuffer(file);
 });
@@ -217,6 +275,23 @@ function resetRun() {
   $('sheetProgress').innerHTML = '';
   const box = $('breakerWarning');
   if (box) { box.classList.add('hidden'); box.textContent = ''; }
+
+  // 도로명 -> 지번/PNU 변환 상태도 함께 초기화 (별도 파일/시트 선택 시)
+  pnuReviewList = [];
+  pnuStopRequested = false;
+  pnuConsecutiveErrors = 0;
+  pnuBreakerTripped = false;
+  pnuCache.clear();
+  sheets.forEach((s) => { s.pnuProcessed = false; s.pnuStats = null; s.pnuColIdx = null; });
+  $('pnuStartBtn').disabled = false;
+  $('pnuStopBtn').disabled = true;
+  $('pnuProgressWrap').classList.add('hidden');
+  $('pnuFailWrap').classList.add('hidden');
+  $('pnuDownloadWrap').classList.add('hidden');
+  $('pnuNote').textContent = '';
+  $('pnuProgressText').textContent = '0 / 0';
+  const pnuBox = $('pnuBreakerWarning');
+  if (pnuBox) { pnuBox.classList.add('hidden'); pnuBox.textContent = ''; }
 }
 
 // ====== 시트 선택 ======
@@ -275,6 +350,7 @@ function refreshMappingFromBase() {
   if (!base) {
     note.textContent = '처리할 시트를 최소 하나는 선택해주세요.';
     populateColumnSelects([]);
+    populatePnuColumnSelects([]);
     return;
   }
   const n = enabledSheets().length;
@@ -282,6 +358,7 @@ function refreshMappingFromBase() {
     ? `컬럼 매핑 기준: "${base.name}"`
     : `컬럼 매핑 기준: "${base.name}" — 나머지 ${n - 1}개 시트는 같은 이름의 컬럼을 찾아 적용합니다.`;
   populateColumnSelects(base.aoa[0] || []);
+  populatePnuColumnSelects(base.aoa[0] || []);
 }
 
 function populateCrsSelect() {
@@ -335,6 +412,28 @@ function populateColumnSelects(header) {
 
   toggleNewColInput('colX', 'colXNewName');
   toggleNewColInput('colY', 'colYNewName');
+}
+
+/**
+ * "도로명 -> 지번/PNU 변환" 섹션의 컬럼 선택지를 채운다.
+ * 도로명주소 컬럼은 필수(빈 옵션 없음), 지번주소 컬럼은 선택("(없음)" 포함).
+ */
+function populatePnuColumnSelects(header) {
+  const fill = (id, withEmpty, emptyLabel) => {
+    const sel = $(id);
+    sel.innerHTML = withEmpty ? `<option value="">${emptyLabel}</option>` : '';
+    header.forEach((h, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${XLSX.utils.encode_col(i)} : ${h || '(제목없음)'}`;
+      sel.appendChild(opt);
+    });
+  };
+  fill('pnuColRoad', true, '(선택하세요)');
+  fill('pnuColJibun', true, '(없음)');
+
+  autoGuess(header, 'pnuColRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
+  autoGuess(header, 'pnuColJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
 }
 
 /**
@@ -811,6 +910,48 @@ function prepareAllSheets() {
   if (skipped.length) {
     $('sheetMapNote').textContent =
       `주소 컬럼이 없어 건너뛰는 시트: ${skipped.join(', ')} — 나머지 ${usable.length}개 시트만 처리합니다.`;
+  }
+  return true;
+}
+
+/**
+ * "도로명 -> 지번/PNU 변환" 섹션의 컬럼 선택을 모든 선택 시트에 적용한다.
+ * prepareAllSheets 와 같은 패턴이지만 완전히 별도의 sheet.pnuColIdx 에 기록한다.
+ */
+function prepareAllSheetsForPnu() {
+  const base = baseSheet();
+  if (!base) { alert('처리할 시트를 최소 하나는 선택해주세요.'); return false; }
+
+  const roadName = selectedColumnName('pnuColRoad', null);
+  const jibunName = selectedColumnName('pnuColJibun', null);
+
+  if (!roadName) { alert('도로명주소 컬럼을 선택해주세요.'); return false; }
+
+  const skipped = [];
+  enabledSheets().forEach((s) => {
+    const road = findColumn(s, roadName);
+    if (road < 0) { skipped.push(s.name); s.pnuColIdx = null; return; }
+    const jibun = jibunName ? findColumn(s, jibunName) : -1;
+
+    const originalLen = s.aoa[0].length;
+    s.pnuColIdx = {
+      road, jibun, originalLen,
+      roadResult: findOrCreateColumn(s, COL_PNU_JIBUN),
+      pnuResult: findOrCreateColumn(s, COL_PNU_CODE),
+      matchResult: jibun >= 0 ? findOrCreateColumn(s, COL_PNU_MATCH) : -1,
+    };
+  });
+
+  const usable = enabledSheets().filter((s) => s.pnuColIdx);
+  if (usable.length === 0) {
+    alert(`선택한 시트에서 "${roadName}" 컬럼을 찾지 못했습니다. 컬럼 지정을 확인해주세요.`);
+    return false;
+  }
+  if (skipped.length) {
+    $('pnuNote').textContent =
+      `도로명주소 컬럼이 없어 건너뛰는 시트: ${skipped.join(', ')} — 나머지 ${usable.length}개 시트만 처리합니다.`;
+  } else {
+    $('pnuNote').textContent = '';
   }
   return true;
 }
@@ -1373,13 +1514,13 @@ function reorderForOutput(sheet) {
   return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
 }
 
-function doneSheetName(base, used) {
-  const SUFFIX = '_완료';
+function doneSheetName(base, used, suffix) {
+  suffix = suffix || '_완료';
   const MAX = 31;
-  let name = base.slice(0, MAX - SUFFIX.length) + SUFFIX;
+  let name = base.slice(0, MAX - suffix.length) + suffix;
   let n = 2;
   while (used.has(name)) {
-    const tail = '_' + n + SUFFIX;
+    const tail = '_' + n + suffix;
     name = base.slice(0, MAX - tail.length) + tail;
     n++;
   }
@@ -1395,6 +1536,110 @@ function uniqueName(base, used) {
     n++;
   }
   return name;
+}
+
+// ====== 도로명 -> 지번/PNU 변환 실행 ======
+$('pnuStopBtn').addEventListener('click', () => { pnuStopRequested = true; });
+
+$('pnuStartBtn').addEventListener('click', async () => {
+  if (!prepareAllSheetsForPnu()) return;
+  ensureServices();
+
+  pnuStopRequested = false;
+  pnuConsecutiveErrors = 0;
+  pnuBreakerTripped = false;
+  pnuReviewList = [];
+  pnuCache.clear();
+  $('pnuStartBtn').disabled = true;
+  $('pnuStopBtn').disabled = false;
+  $('pnuProgressWrap').classList.remove('hidden');
+  $('pnuBreakerWarning').classList.add('hidden');
+  $('pnuBreakerWarning').textContent = '';
+  $('pnuFailWrap').classList.add('hidden');
+  $('pnuDownloadWrap').classList.add('hidden');
+
+  const targets = [];
+  sheets.forEach((s, sheetIdx) => {
+    if (!s.enabled || !s.pnuColIdx) return;
+    s.pnuProcessed = true;
+    s.pnuStats = { total: 0, ok: 0, fail: 0, pnuMissing: 0 };
+    for (let i = 1; i < s.aoa.length; i++) {
+      const addr = Addr.normalize(s.aoa[i][s.pnuColIdx.road]);
+      if (addr !== '') { targets.push({ sheetIdx, rowIndex: i }); s.pnuStats.total++; }
+    }
+  });
+
+  const total = targets.length;
+  let done = 0;
+  const tick = () => { $('pnuProgressText').textContent = `${done} / ${total}`; };
+  tick();
+
+  const concurrency = parseInt($('concurrency').value, 10) || 6;
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      if (pnuStopRequested) return;
+      const myIndex = cursor++;
+      if (myIndex >= targets.length) return;
+
+      const { sheetIdx, rowIndex } = targets[myIndex];
+      const sheet = sheets[sheetIdx];
+      const ci = sheet.pnuColIdx;
+      const row = sheet.aoa[rowIndex];
+      const addr = Addr.normalize(row[ci.road]);
+
+      const r = await convertRoadToJibunPnu(addr);
+
+      if (r.status === 'ok') {
+        row[ci.roadResult] = r.jibun;
+        row[ci.pnuResult] = r.pnu;
+        if (!r.pnu) sheet.pnuStats.pnuMissing++;
+        if (ci.matchResult >= 0) {
+          const existing = Addr.normalize(row[ci.jibun]);
+          if (existing) {
+            const same = Addr.sameParcel(existing, r.jibun);
+            row[ci.matchResult] = same === null ? '판정불가' : (same ? '일치' : '불일치');
+          }
+        }
+        sheet.pnuStats.ok++;
+      } else {
+        pnuReviewList.push({ sheetIdx, rowIndex, address: addr, reason: r.reason });
+        sheet.pnuStats.fail++;
+      }
+      done++; tick();
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+
+  $('pnuStopBtn').disabled = true;
+  $('pnuStartBtn').disabled = false;
+  pnuReviewList.sort((a, b) => (a.sheetIdx - b.sheetIdx) || (a.rowIndex - b.rowIndex));
+  renderPnuFailList();
+  $('pnuDownloadWrap').classList.remove('hidden');
+
+  const pnuMissingTotal = sheets.reduce((sum, s) => sum + (s.pnuStats ? s.pnuStats.pnuMissing : 0), 0);
+  if (pnuMissingTotal > 0) {
+    const note = $('pnuNote');
+    const msg = `PNU를 확정하지 못한 행 ${pnuMissingTotal}건 (지번은 채워졌으나 PNU만 비어있음) — 처리요약 시트에서 확인하세요.`;
+    note.textContent = note.textContent ? note.textContent + ' ' + msg : msg;
+  }
+});
+
+function renderPnuFailList() {
+  const ul = $('pnuFailList');
+  ul.innerHTML = '';
+  pnuReviewList.forEach((item) => {
+    const li = document.createElement('li');
+    const sheetBadge = sheets.length > 1
+      ? `<span class="badge-sheet">${escapeHtml(sheets[item.sheetIdx].name)}</span>` : '';
+    li.innerHTML = `${sheetBadge}<span class="addr"></span><span class="reason">${escapeHtml(item.reason)}</span>`;
+    li.querySelector('.addr').textContent = item.address; // XSS 방지: 주소는 textContent 로
+    ul.appendChild(li);
+  });
+  $('pnuFailBadge').textContent = `실패 ${pnuReviewList.length}건`;
+  $('pnuFailWrap').classList.toggle('hidden', pnuReviewList.length === 0);
 }
 
 $('downloadBtn').addEventListener('click', () => {
@@ -1493,6 +1738,72 @@ $('dictDownloadBtn').addEventListener('click', () => {
   }
   const ws = XLSX.utils.aoa_to_sheet(Dict.toAOA());
   XLSX.writeFile({ SheetNames: ['대체주소사전'], Sheets: { '대체주소사전': ws } }, '대체주소사전.xlsx');
+});
+
+// ====== 도로명 -> 지번/PNU 결과만 별도로 다운로드 ======
+/**
+ * 결과 컬럼을 도로명주소 컬럼 바로 뒤에 삽입하도록 재배치한다.
+ * reorderForOutput 과 같은 패턴이지만 sheet.pnuColIdx 를 대상으로 한다.
+ */
+function reorderForPnuOutput(sheet) {
+  const ci = sheet.pnuColIdx;
+  const total = sheet.aoa[0].length;
+  const insertPoint = ci.road + 1;
+  const resultCols = [ci.roadResult, ci.pnuResult, ci.matchResult].filter((idx) => idx >= 0);
+  const resultSet = new Set(resultCols);
+
+  const order = [];
+  for (let i = 0; i < total; i++) {
+    if (i === insertPoint) resultCols.forEach((idx) => order.push(idx));
+    if (!resultSet.has(i)) order.push(i);
+  }
+  if (insertPoint >= total) resultCols.forEach((idx) => order.push(idx));
+
+  return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
+}
+
+$('pnuDownloadBtn').addEventListener('click', () => {
+  const used = new Set();
+  const outNames = [];
+  const outSheets = {};
+
+  workbook.SheetNames.forEach((name) => {
+    const origName = uniqueName(name, used);
+    used.add(origName);
+    outNames.push(origName);
+    outSheets[origName] = workbook.Sheets[name];
+
+    const s = sheets.find((x) => x.name === name);
+    if (!s || !s.pnuProcessed || !s.pnuColIdx) return;
+
+    const dName = doneSheetName(name, used, '_지번PNU');
+    used.add(dName);
+
+    const ws = XLSX.utils.aoa_to_sheet(reorderForPnuOutput(s));
+    const oldWs = workbook.Sheets[name];
+    if (oldWs['!freeze']) ws['!freeze'] = oldWs['!freeze'];
+
+    outNames.push(dName);
+    outSheets[dName] = ws;
+  });
+
+  const summary = [['시트', '대상', '성공', '실패', '미처리', 'PNU미확정']];
+  sheets.forEach((s) => {
+    if (!s.pnuProcessed || !s.pnuStats) return;
+    const t = s.pnuStats;
+    const unprocessed = t.total - t.ok - t.fail;
+    summary.push([s.name, t.total, t.ok, t.fail, unprocessed, t.pnuMissing]);
+  });
+  if (pnuBreakerTripped || pnuStopRequested) {
+    summary.push([]);
+    summary.push(['⚠ 이 실행은 중간에 중단되었습니다 (중지 버튼 또는 오류 연속 발생). "미처리" 행은 비어있는 채로 저장되었습니다.']);
+  }
+  const sn = uniqueName('처리요약', used);
+  used.add(sn);
+  outNames.push(sn);
+  outSheets[sn] = XLSX.utils.aoa_to_sheet(summary);
+
+  XLSX.writeFile({ SheetNames: outNames, Sheets: outSheets }, originalBaseName + '_지번PNU.xlsx');
 });
 
 })();
