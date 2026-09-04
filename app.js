@@ -112,6 +112,7 @@ const isAltMethod = (m) => ALT_METHODS.indexOf(m) !== -1;
 // ====== 전역 상태 ======
 let workbook = null;
 let originalFileName = 'geocoded.xlsx';
+let originalBaseName = 'geocoded'; // 확장자 없는 원본 파일명. PNU 결과 파일명에 사용.
 /* 시트별 상태. { name, aoa, enabled, colIdx, processed, stats } */
 let sheets = [];
 let reviewList = [];       // { sheetIdx, rowIndex, address, candidates, outside, resolved, reason }
@@ -226,6 +227,7 @@ $('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   originalFileName = file.name.replace(/\.(xlsx|xls)$/i, '') + '_geocoded.xlsx';
+  originalBaseName = file.name.replace(/\.(xlsx|xls)$/i, '');
 
   const reader = new FileReader();
   reader.onload = (evt) => {
@@ -1510,13 +1512,13 @@ function reorderForOutput(sheet) {
   return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
 }
 
-function doneSheetName(base, used) {
-  const SUFFIX = '_완료';
+function doneSheetName(base, used, suffix) {
+  suffix = suffix || '_완료';
   const MAX = 31;
-  let name = base.slice(0, MAX - SUFFIX.length) + SUFFIX;
+  let name = base.slice(0, MAX - suffix.length) + suffix;
   let n = 2;
   while (used.has(name)) {
-    const tail = '_' + n + SUFFIX;
+    const tail = '_' + n + suffix;
     name = base.slice(0, MAX - tail.length) + tail;
     n++;
   }
@@ -1726,6 +1728,66 @@ $('dictDownloadBtn').addEventListener('click', () => {
   }
   const ws = XLSX.utils.aoa_to_sheet(Dict.toAOA());
   XLSX.writeFile({ SheetNames: ['대체주소사전'], Sheets: { '대체주소사전': ws } }, '대체주소사전.xlsx');
+});
+
+// ====== 도로명 -> 지번/PNU 결과만 별도로 다운로드 ======
+/**
+ * 결과 컬럼을 도로명주소 컬럼 바로 뒤에 삽입하도록 재배치한다.
+ * reorderForOutput 과 같은 패턴이지만 sheet.pnuColIdx 를 대상으로 한다.
+ */
+function reorderForPnuOutput(sheet) {
+  const ci = sheet.pnuColIdx;
+  const originalLen = ci.originalLen;
+  const insertPoint = ci.road + 1;
+
+  const candidates = [ci.roadResult, ci.pnuResult, ci.matchResult]
+    .filter((idx) => idx >= 0 && idx >= originalLen);
+
+  const order = [];
+  for (let i = 0; i < insertPoint; i++) order.push(i);
+  candidates.forEach((idx) => order.push(idx));
+  for (let i = insertPoint; i < originalLen; i++) order.push(i);
+
+  return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
+}
+
+$('pnuDownloadBtn').addEventListener('click', () => {
+  const used = new Set();
+  const outNames = [];
+  const outSheets = {};
+
+  workbook.SheetNames.forEach((name) => {
+    const origName = uniqueName(name, used);
+    used.add(origName);
+    outNames.push(origName);
+    outSheets[origName] = workbook.Sheets[name];
+
+    const s = sheets.find((x) => x.name === name);
+    if (!s || !s.pnuProcessed || !s.pnuColIdx) return;
+
+    const dName = doneSheetName(name, used, '_지번PNU');
+    used.add(dName);
+
+    const ws = XLSX.utils.aoa_to_sheet(reorderForPnuOutput(s));
+    const oldWs = workbook.Sheets[name];
+    if (oldWs['!freeze']) ws['!freeze'] = oldWs['!freeze'];
+
+    outNames.push(dName);
+    outSheets[dName] = ws;
+  });
+
+  const summary = [['시트', '대상', '성공', '실패']];
+  sheets.forEach((s) => {
+    if (!s.pnuProcessed || !s.pnuStats) return;
+    const t = s.pnuStats;
+    summary.push([s.name, t.total, t.ok, t.fail]);
+  });
+  const sn = uniqueName('처리요약', used);
+  used.add(sn);
+  outNames.push(sn);
+  outSheets[sn] = XLSX.utils.aoa_to_sheet(summary);
+
+  XLSX.writeFile({ SheetNames: outNames, Sheets: outSheets }, originalBaseName + '_지번PNU.xlsx');
 });
 
 })();
