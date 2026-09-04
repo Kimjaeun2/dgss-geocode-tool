@@ -288,6 +288,8 @@ function resetRun() {
   $('pnuProgressWrap').classList.add('hidden');
   $('pnuFailWrap').classList.add('hidden');
   $('pnuDownloadWrap').classList.add('hidden');
+  $('pnuNote').textContent = '';
+  $('pnuProgressText').textContent = '0 / 0';
   const pnuBox = $('pnuBreakerWarning');
   if (pnuBox) { pnuBox.classList.add('hidden'); pnuBox.textContent = ''; }
 }
@@ -417,9 +419,9 @@ function populateColumnSelects(header) {
  * 도로명주소 컬럼은 필수(빈 옵션 없음), 지번주소 컬럼은 선택("(없음)" 포함).
  */
 function populatePnuColumnSelects(header) {
-  const fill = (id, withEmpty) => {
+  const fill = (id, withEmpty, emptyLabel) => {
     const sel = $(id);
-    sel.innerHTML = withEmpty ? '<option value="">(없음)</option>' : '';
+    sel.innerHTML = withEmpty ? `<option value="">${emptyLabel}</option>` : '';
     header.forEach((h, i) => {
       const opt = document.createElement('option');
       opt.value = i;
@@ -427,8 +429,8 @@ function populatePnuColumnSelects(header) {
       sel.appendChild(opt);
     });
   };
-  fill('pnuColRoad', false);
-  fill('pnuColJibun', true);
+  fill('pnuColRoad', true, '(선택하세요)');
+  fill('pnuColJibun', true, '(없음)');
 
   autoGuess(header, 'pnuColRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
   autoGuess(header, 'pnuColJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
@@ -1560,7 +1562,7 @@ $('pnuStartBtn').addEventListener('click', async () => {
   sheets.forEach((s, sheetIdx) => {
     if (!s.enabled || !s.pnuColIdx) return;
     s.pnuProcessed = true;
-    s.pnuStats = { total: 0, ok: 0, fail: 0 };
+    s.pnuStats = { total: 0, ok: 0, fail: 0, pnuMissing: 0 };
     for (let i = 1; i < s.aoa.length; i++) {
       const addr = Addr.normalize(s.aoa[i][s.pnuColIdx.road]);
       if (addr !== '') { targets.push({ sheetIdx, rowIndex: i }); s.pnuStats.total++; }
@@ -1592,6 +1594,7 @@ $('pnuStartBtn').addEventListener('click', async () => {
       if (r.status === 'ok') {
         row[ci.roadResult] = r.jibun;
         row[ci.pnuResult] = r.pnu;
+        if (!r.pnu) sheet.pnuStats.pnuMissing++;
         if (ci.matchResult >= 0) {
           const existing = Addr.normalize(row[ci.jibun]);
           if (existing) {
@@ -1615,6 +1618,13 @@ $('pnuStartBtn').addEventListener('click', async () => {
   pnuReviewList.sort((a, b) => (a.sheetIdx - b.sheetIdx) || (a.rowIndex - b.rowIndex));
   renderPnuFailList();
   $('pnuDownloadWrap').classList.remove('hidden');
+
+  const pnuMissingTotal = sheets.reduce((sum, s) => sum + (s.pnuStats ? s.pnuStats.pnuMissing : 0), 0);
+  if (pnuMissingTotal > 0) {
+    const note = $('pnuNote');
+    const msg = `PNU를 확정하지 못한 행 ${pnuMissingTotal}건 (지번은 채워졌으나 PNU만 비어있음) — 처리요약 시트에서 확인하세요.`;
+    note.textContent = note.textContent ? note.textContent + ' ' + msg : msg;
+  }
 });
 
 function renderPnuFailList() {
@@ -1737,16 +1747,17 @@ $('dictDownloadBtn').addEventListener('click', () => {
  */
 function reorderForPnuOutput(sheet) {
   const ci = sheet.pnuColIdx;
-  const originalLen = ci.originalLen;
+  const total = sheet.aoa[0].length;
   const insertPoint = ci.road + 1;
-
-  const candidates = [ci.roadResult, ci.pnuResult, ci.matchResult]
-    .filter((idx) => idx >= 0 && idx >= originalLen);
+  const resultCols = [ci.roadResult, ci.pnuResult, ci.matchResult].filter((idx) => idx >= 0);
+  const resultSet = new Set(resultCols);
 
   const order = [];
-  for (let i = 0; i < insertPoint; i++) order.push(i);
-  candidates.forEach((idx) => order.push(idx));
-  for (let i = insertPoint; i < originalLen; i++) order.push(i);
+  for (let i = 0; i < total; i++) {
+    if (i === insertPoint) resultCols.forEach((idx) => order.push(idx));
+    if (!resultSet.has(i)) order.push(i);
+  }
+  if (insertPoint >= total) resultCols.forEach((idx) => order.push(idx));
 
   return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
 }
@@ -1776,12 +1787,17 @@ $('pnuDownloadBtn').addEventListener('click', () => {
     outSheets[dName] = ws;
   });
 
-  const summary = [['시트', '대상', '성공', '실패']];
+  const summary = [['시트', '대상', '성공', '실패', '미처리', 'PNU미확정']];
   sheets.forEach((s) => {
     if (!s.pnuProcessed || !s.pnuStats) return;
     const t = s.pnuStats;
-    summary.push([s.name, t.total, t.ok, t.fail]);
+    const unprocessed = t.total - t.ok - t.fail;
+    summary.push([s.name, t.total, t.ok, t.fail, unprocessed, t.pnuMissing]);
   });
+  if (pnuBreakerTripped || pnuStopRequested) {
+    summary.push([]);
+    summary.push(['⚠ 이 실행은 중간에 중단되었습니다 (중지 버튼 또는 오류 연속 발생). "미처리" 행은 비어있는 채로 저장되었습니다.']);
+  }
   const sn = uniqueName('처리요약', used);
   used.add(sn);
   outNames.push(sn);

@@ -19,6 +19,7 @@
    */
   function buildPnu(addressObj) {
     if (!addressObj || !addressObj.b_code) return '';
+    if (addressObj.main_address_no == null || addressObj.main_address_no === '') return '';
     var mountain = addressObj.mountain_yn === '1' ? '1' : '0';
     var main = pad4(addressObj.main_address_no);
     var sub = pad4(addressObj.sub_address_no);

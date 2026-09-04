@@ -33,3 +33,8 @@ test('buildPnu — mountain_yn이 없으면 대지(0)로 취급', function () {
   var pnu = Pnu.buildPnu({ b_code: '1111010100', main_address_no: '1', sub_address_no: '1' });
   eq(pnu.charAt(10), '0', 'mountain_yn 없음 -> 0');
 });
+
+test('buildPnu — main_address_no 없으면 빈 문자열 (지번 없는 결과는 PNU 조립 불가)', function () {
+  eq(Pnu.buildPnu({ b_code: '1111010100', mountain_yn: '0', main_address_no: '', sub_address_no: '0' }), '', '본번 빈 문자열');
+  eq(Pnu.buildPnu({ b_code: '1111010100', mountain_yn: '0', sub_address_no: '0' }), '', '본번 필드 자체가 없음');
+});

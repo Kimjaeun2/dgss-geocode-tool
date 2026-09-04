@@ -75,8 +75,9 @@ tests/
 ```js
 function buildPnu(addressObj) {
   if (!addressObj || !addressObj.b_code) return '';
+  if (addressObj.main_address_no == null || addressObj.main_address_no === '') return '';
   const mountain = addressObj.mountain_yn === '1' ? '1' : '0';
-  const main = String(addressObj.main_address_no || '0').padStart(4, '0');
+  const main = String(addressObj.main_address_no).padStart(4, '0');
   const sub = String(addressObj.sub_address_no || '0').padStart(4, '0');
   return addressObj.b_code + mountain + main + sub;
 }
