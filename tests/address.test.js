@@ -413,5 +413,17 @@ test('sameParcel — 읍면동이 다르면 false', function () {
 
 test('sameParcel — 한쪽이라도 구조를 못 읽으면 null (판정 보류)', function () {
   eq(Addr.sameParcel('', '경기도 고양시 일산서구 대화동 2600'), null, '빈 문자열');
-  eq(Addr.sameParcel('한뫼공원', '경기도 고양시 일산서구 대화동 2600'), null, '지명형이라 sgg/emd/bunji가 전부 없음');
+  eq(Addr.sameParcel('한뫼공원', '경기도 고양시 일산서구 대화동 2600'), null, '지명형이라 emd/bunji가 전부 없음');
+});
+
+test('sameParcel — 시·군·구는 비교에 쓰지 않는다 (실사용 데이터: 기존 지번에 시·군·구가 빠진 경우, 회귀)', function () {
+  eq(Addr.sameParcel('부남면 이현리 348-2', '경상북도 청송군 부남면 이현리 348-2'), true,
+     '기존 지번에 시·군·구가 통째로 없어도 읍면리+번지가 같으면 일치');
+  eq(Addr.sameParcel('경기도 고양시 일산서구 대화동 2600', '경기도 성남시 분당구 대화동 2600'), true,
+     '시·군·구가 서로 달라도 읍면리+번지가 같으면 일치로 본다 (설계상 허용된 트레이드오프)');
+});
+
+test('sameParcel — 본번-부번까지 정확히 같아야 일치한다 (회귀)', function () {
+  eq(Addr.sameParcel('청송군 부남면 이현리 348-2', '청송군 부남면 이현리 348'), false, '부번 유무 차이는 다른 필지');
+  eq(Addr.sameParcel('청송군 부남면 이현리 348-2', '청송군 부남면 이현리 348-3'), false, '부번 값이 다름');
 });

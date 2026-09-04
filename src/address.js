@@ -388,14 +388,17 @@
 
   /**
    * 두 주소가 같은 필지를 가리키는지 판정한다.
-   * 문자열 완전일치 대신 parse() 로 분해한 시·군·구+읍면동+번지만 비교한다 —
-   * 시·도 축약형, 공백 같은 표기 차이를 흡수하면서 실제로 다른 필지는
-   * 정확히 걸러낸다. 반환: true(같은 필지) / false(다른 필지) / null(판정 보류).
+   * 문자열 완전일치 대신 parse() 로 분해한 읍·면·동·리 + 번지(본번-부번)만
+   * 비교한다 — 시·군·구는 일부러 비교에서 뺀다. 실사용 데이터에서 기존
+   * 지번주소 칸이 "부남면 이현리 348-2"처럼 시·군·구 없이 읍면리부터만
+   * 적혀 있는 경우가 흔한데, 시·군·구까지 비교하면 같은 필지인데도 매번
+   * 불일치로 잘못 뜬다. 시·도 축약형, 공백 같은 표기 차이도 흡수한다.
+   * 반환: true(같은 필지) / false(다른 필지) / null(판정 보류).
    */
   function sameParcel(addrA, addrB) {
     var key = function (addr) {
       var p = parse(addr);
-      return [p.sgg, p.emd, p.bunji].filter(Boolean).join(' ');
+      return [p.emd, p.bunji].filter(Boolean).join(' ');
     };
     var ka = key(addrA), kb = key(addrB);
     if (!ka || !kb) return null;
