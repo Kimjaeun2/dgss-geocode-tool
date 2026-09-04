@@ -196,6 +196,7 @@ $('fileInput').addEventListener('change', (e) => {
     $('step-mapping').classList.remove('hidden');
     $('step-dict').classList.remove('hidden');
     $('step-crs').classList.remove('hidden');
+    $('step-pnu').classList.remove('hidden');
   };
   reader.readAsArrayBuffer(file);
 });
@@ -276,6 +277,7 @@ function refreshMappingFromBase() {
   if (!base) {
     note.textContent = '처리할 시트를 최소 하나는 선택해주세요.';
     populateColumnSelects([]);
+    populatePnuColumnSelects([]);
     return;
   }
   const n = enabledSheets().length;
@@ -283,6 +285,7 @@ function refreshMappingFromBase() {
     ? `컬럼 매핑 기준: "${base.name}"`
     : `컬럼 매핑 기준: "${base.name}" — 나머지 ${n - 1}개 시트는 같은 이름의 컬럼을 찾아 적용합니다.`;
   populateColumnSelects(base.aoa[0] || []);
+  populatePnuColumnSelects(base.aoa[0] || []);
 }
 
 function populateCrsSelect() {
@@ -336,6 +339,28 @@ function populateColumnSelects(header) {
 
   toggleNewColInput('colX', 'colXNewName');
   toggleNewColInput('colY', 'colYNewName');
+}
+
+/**
+ * "도로명 -> 지번/PNU 변환" 섹션의 컬럼 선택지를 채운다.
+ * 도로명주소 컬럼은 필수(빈 옵션 없음), 지번주소 컬럼은 선택("(없음)" 포함).
+ */
+function populatePnuColumnSelects(header) {
+  const fill = (id, withEmpty) => {
+    const sel = $(id);
+    sel.innerHTML = withEmpty ? '<option value="">(없음)</option>' : '';
+    header.forEach((h, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${XLSX.utils.encode_col(i)} : ${h || '(제목없음)'}`;
+      sel.appendChild(opt);
+    });
+  };
+  fill('pnuColRoad', false);
+  fill('pnuColJibun', true);
+
+  autoGuess(header, 'pnuColRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
+  autoGuess(header, 'pnuColJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
 }
 
 /**
