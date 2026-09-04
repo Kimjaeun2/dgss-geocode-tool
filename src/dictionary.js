@@ -15,8 +15,11 @@
   /* 정규화된 원본주소 -> 항목. 완전일치 조회만 지원한다(부분일치는 오답 위험). */
   var store = Object.create(null);
 
+  /* canonicalize() 를 쓴다 (normalize() 는 공백 정리만 해서 '가좌로128'과
+     '가좌로 128', '경기'와 '경기도' 같은 표기 차이를 다른 키로 취급한다). */
   function norm(s) {
-    return global.Addr ? global.Addr.normalize(s) : String(s == null ? '' : s).trim();
+    if (!global.Addr) return String(s == null ? '' : s).trim();
+    return global.Addr.canonicalize ? global.Addr.canonicalize(s) : global.Addr.normalize(s);
   }
 
   function today() {

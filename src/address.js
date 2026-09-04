@@ -16,6 +16,19 @@
     '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
   ];
 
+  /* 정식 명칭 -> 축약형. canonicalize() 에서 표기를 하나로 통일하는 데 쓴다.
+     접두어만 잘라내는 방식은 '충청북도' -> '충북'처럼 축약형이 접두어가 아닌
+     경우에 틀리므로, 명시적으로 매핑한다 (2023~2024 개편으로 생긴
+     강원특별자치도/전북특별자치도 등 신구 명칭 모두 포함). */
+  var SIDO_FULL_TO_SHORT = {
+    '서울특별시': '서울', '부산광역시': '부산', '대구광역시': '대구', '인천광역시': '인천',
+    '광주광역시': '광주', '대전광역시': '대전', '울산광역시': '울산', '세종특별자치시': '세종',
+    '경기도': '경기', '강원도': '강원', '강원특별자치도': '강원',
+    '충청북도': '충북', '충청남도': '충남',
+    '전라북도': '전북', '전북특별자치도': '전북', '전라남도': '전남',
+    '경상북도': '경북', '경상남도': '경남', '제주특별자치도': '제주',
+  };
+
   /* 시·군·구. 단, '~읍/면/동/가/리'로 끝나면 제외한다. */
   var SGG_RE = /(시|군|구)$/;
   var EMD_RE = /(읍|면|동|가|리)$/;
@@ -224,6 +237,41 @@
     return parsed.rest ? 'place' : 'address';
   }
 
+  /** 시·도를 축약형으로 통일한다 ('경기도'/'경기' -> '경기'). 매핑에 없으면 그대로 둔다. */
+  function shortSido(s) {
+    if (!s) return s;
+    if (SIDO_SHORT.indexOf(s) !== -1) return s;
+    return SIDO_FULL_TO_SHORT[s] || s;
+  }
+
+  /**
+   * parse() 가 뽑아낸 구조를 표기 차이 없는 표준 문자열 하나로 재조립한다.
+   * normalize() 는 공백 정리만 하기 때문에 '가좌로128'과 '가좌로 128', '경기'와
+   * '경기도', '새말공원(민원)'과 '새말공원'을 전부 다른 문자열로 취급한다 —
+   * 그 결과 사전 조회 / 중복 제거 / 지오코딩 캐시가 표기만 다른 같은 주소를
+   * 놓친다. 이 함수는 그 세 군데의 비교 키로 normalize() 대신 쓰기 위한 것이다.
+   * 실제 API에 보내는 검색어 문자열은 그대로 두고(원본 표기가 검색엔 오히려
+   * 유리할 수 있음), "같은 주소인가?"를 판정할 때만 이 함수를 쓴다.
+   */
+  function canonicalize(addr) {
+    var p = parse(addr);
+    if (!p.sido && !p.sgg && !p.emd && !p.road && !p.bunji && !p.rest) {
+      return normalize(addr); // 구조를 전혀 못 읽으면 공백 정리만 해서 반환
+    }
+    var parts = [];
+    if (p.sido) parts.push(shortSido(p.sido));
+    if (p.sgg) parts.push(p.sgg);
+    if (p.emd) parts.push(p.emd);
+    if (p.road) parts.push(p.road);
+    if (p.bunji) parts.push(p.bunji);
+    // rest 는 번지가 있어도 반드시 남긴다. 이 키는 중복 제거(=행 삭제)에도 쓰이는데,
+    // 번지가 같다고 rest 를 버리면 '송산로464-23'과 '송산로464-23 농가주택주변'이
+    // 같은 키가 되어 한 필지에 있는 서로 다른 대상지가 통째로 지워진다.
+    // (실데이터 측정: rest 를 버리면 삭제 행이 83건 -> 378건으로 늘었다.)
+    if (p.rest) parts.push(p.rest);
+    return parts.join(' ');
+  }
+
   /** 배열에 정규화한 값을 중복 없이 넣는다. */
   function pushUniq(arr, value) {
     var v = normalize(value);
@@ -249,6 +297,21 @@
     pushUniq(out, stripParen(spaced));
     pushUniq(out, dropExtraBunji(base));
     pushUniq(out, dropExtraBunji(stripParen(base)));
+
+    // 시군구와 실제 주소 사이에 낀 무관한 단어('민원 킨텍스로240')는 위 변형들이
+    // 전부 못 지운다 — 전부 원본 문자열 기반 치환일 뿐, 구조를 모르기 때문이다.
+    // parse() 는 이 노이즈 단어를 구조 판정 시 이미 건너뛰므로, 그 결과로
+    // 재조립한 변형을 추가한다. 번지가 확정된 경우에만 의미가 있다.
+    var p = parse(addr);
+    if (p.bunji) {
+      var parts = [];
+      if (p.sido) parts.push(p.sido);
+      if (p.sgg) parts.push(p.sgg);
+      if (p.emd) parts.push(p.emd);
+      if (p.road) parts.push(p.road);
+      parts.push(p.bunji);
+      pushUniq(out, parts.join(' '));
+    }
     return out;
   }
 
@@ -265,11 +328,73 @@
     return out;
   }
 
+  /**
+   * parse() 가 읽어낸 구조를 정형 주소 문자열로 재조립한다.
+   * canonicalize() 와 달리 시·도를 축약하지 않고 rest(지명)도 붙이지 않는다 —
+   * 이건 "같은 주소인가?" 판정용이 아니라 지오코더에 보낼 검색어를 만드는 용도다.
+   * parse() 가 노이즈 단어('민원' 등)를 이미 건너뛰었으므로, 이 결과는 원본에
+   * 섞여 있던 참고메모가 제거된 깨끗한 주소가 된다.
+   */
+  function rebuild(parsed) {
+    if (!parsed) return '';
+    var parts = [];
+    if (parsed.sido) parts.push(parsed.sido);
+    if (parsed.sgg) parts.push(parsed.sgg);
+    if (parsed.emd) parts.push(parsed.emd);
+    if (parsed.road) parts.push(parsed.road);
+    if (parsed.bunji) parts.push(parsed.bunji);
+    return parts.join(' ');
+  }
+
+  /** 지번 문자열에서 끝의 숫자 조각(부번, 없으면 본번)과 그 앞부분을 분리한다.
+   * '130-4' -> {head:'130-', num:4}, '130' -> {head:'', num:130},
+   * '산 12-3' -> {head:'산 12-', num:3} */
+  function splitLastNumber(bunji) {
+    var m = String(bunji).match(/^(.*?)(\d+)$/);
+    if (!m) return null;
+    return { head: m[1], num: parseInt(m[2], 10) };
+  }
+
+  /**
+   * 번지의 마지막 숫자 조각(부번이 있으면 부번, 없으면 본번)을 ±1~±3 범위에서
+   * 바꾼 이웃 지번을 가까운 순서로 만든다. 0 이하가 되는 후보는 제외한다.
+   * 정확한 지번 검색이 실패했을 때만 쓰는 후보 생성기다.
+   *
+   * 주의: 지번이 순차적으로 붙어 있다고 해서 실제 필지 위치가 인접하다는
+   * 보장은 전혀 없다(분필·합필 이력에 따라 다르다). 여기서 만든 후보는
+   * "검색해볼 값"일 뿐이며, 최종 채택은 반드시 사람이 지도에서 확인해야 한다
+   * — 이 함수를 쓰는 쪽(app.js)은 절대 자동 확정하면 안 된다.
+   */
+  function bunjiNeighbors(bunji) {
+    if (!bunji) return [];
+    var s = splitLastNumber(bunji);
+    if (!s) return [];
+    var out = [];
+    [1, 2, 3].forEach(function (d) {
+      if (s.num - d > 0) out.push({ bunji: s.head + (s.num - d), diff: d });
+      out.push({ bunji: s.head + (s.num + d), diff: d });
+    });
+    return out;
+  }
+
+  /** rebuild() 와 같되 번지만 다른 값으로 바꿔 재조립한다. */
+  function rebuildWithBunji(parsed, bunji) {
+    if (!parsed) return '';
+    return rebuild({
+      sido: parsed.sido, sgg: parsed.sgg, emd: parsed.emd,
+      road: parsed.road, bunji: bunji
+    });
+  }
+
   global.Addr = {
     normalize: normalize,
+    canonicalize: canonicalize,
     parse: parse,
     route: route,
+    rebuild: rebuild,
     addressVariants: addressVariants,
-    keywordCandidates: keywordCandidates
+    keywordCandidates: keywordCandidates,
+    bunjiNeighbors: bunjiNeighbors,
+    rebuildWithBunji: rebuildWithBunji
   };
 })(window);

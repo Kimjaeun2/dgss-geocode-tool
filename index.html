@@ -74,6 +74,10 @@
         <select id="colY"></select>
         <input type="text" id="colYNewName" class="hidden" placeholder="새 컬럼 이름 (예: Y)">
       </div>
+      <div class="field">
+        <label>결과 컬럼을 삽입할 위치</label>
+        <select id="insertAfterCol"></select>
+      </div>
     </div>
   </section>
 
@@ -106,6 +110,24 @@
       </div>
     </div>
     <div id="crsResult" class="crs-result"></div>
+    <div class="field">
+      <label>대체주소 사용 여부</label>
+      <label class="checkbox">
+        <input type="checkbox" id="allowPlaceFallback" checked>
+        지명형 주소(공원·시설명 등)를 장소검색으로 대체주소 찾기
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="allowBunjiFallback" checked>
+        정확한 지번을 못 찾으면 인접 지번(±3)을 대체주소 후보로 찾기 — 자동 확정되지 않고 항상 검수 목록에서 직접 확인 후 선택합니다
+      </label>
+    </div>
+    <div class="field">
+      <label>진단</label>
+      <label class="checkbox">
+        <input type="checkbox" id="debugMode">
+        시도한 검색어와 결과를 전부 기록 (결과 엑셀에 <code>진단로그</code> 시트로 저장됩니다)
+      </label>
+    </div>
     <div class="field" style="max-width:280px">
       <label>동시 처리 수 (빠르지만 너무 높이면 오류가 늘 수 있음)</label>
       <select id="concurrency">
@@ -145,6 +167,15 @@
     <div class="field hidden" id="sheetFilterWrap" style="max-width:280px">
       <label>시트 필터</label>
       <select id="sheetFilter"><option value="">전체 시트</option></select>
+    </div>
+    <div class="field" id="reasonFilterWrap" style="max-width:280px">
+      <label>사유 필터</label>
+      <select id="reasonFilter">
+        <option value="">전체 사유</option>
+        <option value="multi">후보 여러 건</option>
+        <option value="bunji">인접 지번 후보</option>
+        <option value="none">결과 없음</option>
+      </select>
     </div>
     <div class="fail-layout">
       <ul id="failList" class="fail-list"></ul>

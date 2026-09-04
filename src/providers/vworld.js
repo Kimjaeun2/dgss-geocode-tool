@@ -73,12 +73,13 @@
    * type: 'PARCEL' | 'ROAD'
    * 반환: { state: 'ok', lon, lat, refinedText } | { state: 'zero' } | { state: 'error' }
    */
-  function getcoord(address, type) {
+  function getcoord(address, type, crs) {
     if (!isAvailable()) return Promise.resolve({ state: 'error', reason: 'no-key' });
+    var useCrs = crs || 'EPSG:4326';
 
     var url = 'https://api.vworld.kr/req/address'
       + '?service=address&request=getcoord&version=2.0'
-      + '&crs=EPSG:4326'
+      + '&crs=' + encodeURIComponent(useCrs)
       + '&address=' + encodeURIComponent(address)
       + '&type=' + type
       + '&refine=true&simple=false&format=json'
@@ -102,6 +103,7 @@
         state: 'ok',
         lon: parseFloat(point.x),
         lat: parseFloat(point.y),
+        crs: useCrs,
         refinedText: (res.refined && res.refined.text) || '',
       };
     });
