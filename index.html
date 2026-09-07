@@ -8,20 +8,6 @@
 <link rel="stylesheet" href="style.css">
 <!-- 엑셀 읽기/쓰기 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script>window.__XLSX_COMMUNITY = window.XLSX;</script>
-<!--
-  xlsx-js-style: 셀 배경색 등 스타일을 "쓸" 수 있는 SheetJS 포크.
-  커뮤니티판 XLSX는 스타일 읽기는 되지만 쓰기는 지원하지 않는다(sheetjs#3214).
-  "도로명->지번/PNU" 결과 다운로드에서 "불일치" 행에 색을 칠하는 용도로만 쓴다.
-  같은 전역 이름(XLSX)을 쓰므로 로드 직후 window.XLSXStyle로 옮기고 커뮤니티판을
-  window.XLSX 자리에 복원한다 — 이 스크립트가 없거나 로드에 실패해도 나머지
-  기능(읽기, 기존 다운로드)은 그대로 동작하고, 색칠만 조용히 생략된다.
--->
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script>
-  window.XLSXStyle = (window.XLSX !== window.__XLSX_COMMUNITY) ? window.XLSX : null;
-  window.XLSX = window.__XLSX_COMMUNITY;
-</script>
 <!-- 좌표계 변환 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <!--
@@ -35,7 +21,6 @@
 <script src="src/address.js"></script>
 <script src="src/gate.js"></script>
 <script src="src/dictionary.js"></script>
-<script src="src/pnu.js"></script>
 <!--
   VWorld Open API 키
   주의 1: https://www.vworld.kr 에서 발급받은 인증키로 아래 값을 교체하세요.
@@ -54,6 +39,12 @@
   <p class="sub">엑셀 업로드 → 주소검색·장소검색 자동 지오코딩 → 남은 건은 지도에서 보정 → 엑셀 다운로드</p>
 </header>
 
+<!-- 시스템 전환 메뉴: 지오코딩 / 도로명-지번 매칭은 이제 완전히 분리된 두 페이지다. -->
+<nav class="app-switch" aria-label="시스템 선택">
+  <a href="index.html" class="active">📍 주소 지오코딩</a>
+  <a href="address-match.html">🔎 도로명 → 지번/PNU 매칭</a>
+</nav>
+
 <!-- 상단 단계바: 아래 카드들의 hidden 클래스 상태만 읽어 표시한다.
      app.js의 흐름/상태는 전혀 건드리지 않는 순수 표시용 내비게이션. -->
 <nav class="stepper" id="stepper" aria-label="진행 단계"></nav>
@@ -64,43 +55,6 @@
     <h2><span class="step-badge">1</span> 엑셀 업로드</h2>
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div id="uploadStatus" class="status"></div>
-  </section>
-
-  <!-- 부가 기능: 도로명 -> 지번/PNU 변환 (아래 지오코딩 단계와 완전히 독립) -->
-  <section class="card hidden" id="step-pnu">
-    <h2>도로명 → 지번/PNU 변환 <span class="badge">독립 기능</span></h2>
-    <p class="hint">
-      도로명주소는 정확한데 지번주소가 부정확하거나 모호할 때, 도로명주소를 기준으로
-      카카오 API에서 지번주소와 PNU(19자리 필지고유번호)를 뽑아 새 컬럼에 기록합니다.
-      좌표(X, Y)는 다루지 않으며, 아래 지오코딩 단계와는 별개로 동작합니다.
-    </p>
-    <div class="grid2">
-      <div class="field">
-        <label>도로명주소 컬럼</label>
-        <select id="pnuColRoad"></select>
-      </div>
-      <div class="field">
-        <label>기존 지번주소 컬럼 <span class="badge">선택 — 일치 여부 비교용</span></label>
-        <select id="pnuColJibun"><option value="">(없음)</option></select>
-      </div>
-    </div>
-    <div id="pnuNote" class="status"></div>
-    <button id="pnuStartBtn">변환 실행</button>
-    <button id="pnuStopBtn" class="danger" disabled>중지</button>
-
-    <div id="pnuProgressWrap" class="hidden">
-      <div id="pnuProgressText" class="status">0 / 0</div>
-      <div id="pnuBreakerWarning" class="status warn hidden"></div>
-    </div>
-
-    <div id="pnuFailWrap" class="hidden">
-      <h3>실패 목록 <span id="pnuFailBadge" class="badge"></span></h3>
-      <ul id="pnuFailList" class="fail-list"></ul>
-    </div>
-
-    <div id="pnuDownloadWrap" class="hidden">
-      <button id="pnuDownloadBtn">지번/PNU 결과 다운로드</button>
-    </div>
   </section>
 
   <!-- 2단계: 시트/컬럼 매핑 -->
@@ -263,6 +217,7 @@
   </section>
 </main>
 
+<script src="src/core.js"></script>
 <script src="app.js"></script>
 <script>
 /* 상단 단계바: 아래 카드들의 class="hidden" 상태를 관찰만 하는 순수 표시용

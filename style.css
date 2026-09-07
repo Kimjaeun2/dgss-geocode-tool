@@ -142,14 +142,25 @@ main { max-width: 980px; margin: 28px auto; padding: 0 16px 72px; }
 }
 .step-badge.sub { background: var(--primary-100); color: var(--primary-700); }
 
-/* 도로명 -> 지번/PNU 변환: 흐름 밖 독립 기능이므로 시각적으로 구분한다 */
-#step-pnu {
-  border: 1px dashed var(--border-strong);
-  background: var(--surface-muted);
-}
-#step-pnu h2 { color: var(--primary-700); }
-
 .hidden { display: none; }
+
+/* ==========================================================================
+   시스템 전환 메뉴 (index.html / address-match.html)
+   ========================================================================== */
+.app-switch {
+  display: flex; gap: 8px; max-width: 980px; margin: 0 auto;
+  padding: 14px 16px 0; flex-wrap: wrap;
+}
+.app-switch a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+  border-radius: 999px; font-size: 13px; font-weight: 600; text-decoration: none;
+  color: var(--text-muted); background: var(--surface); border: 1px solid var(--border);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.app-switch a:hover { background: var(--primary-100); color: var(--primary-700); }
+.app-switch a.active {
+  background: var(--primary-600); color: #fff; border-color: var(--primary-600);
+}
 
 /* ==========================================================================
    배지 / 상태 텍스트
