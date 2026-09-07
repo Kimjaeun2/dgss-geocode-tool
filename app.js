@@ -1762,6 +1762,26 @@ function reorderForPnuOutput(sheet) {
   return sheet.aoa.map((row) => order.map((idx) => (idx < row.length ? row[idx] : '')));
 }
 
+/**
+ * "불일치" 행 전체에 배경색을 칠한다. aoa(재배치된 원본 배열)에서 지번일치여부
+ * 컬럼 위치를 헤더 이름으로 찾으므로 컬럼이 어디로 재배치됐는지와 무관하게
+ * 동작한다. window.XLSXStyle이 없으면(로드 실패) 조용히 아무것도 하지 않는다
+ * — 색만 빠질 뿐 다운로드 자체는 정상 진행된다.
+ */
+function highlightMismatchRows(ws, aoa) {
+  if (!window.XLSXStyle) return;
+  const matchColIdx = aoa[0].indexOf(COL_PNU_MATCH);
+  if (matchColIdx < 0) return;
+  const fill = { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFC7CE' } } };
+  for (let r = 1; r < aoa.length; r++) {
+    if (aoa[r][matchColIdx] !== '불일치') continue;
+    for (let c = 0; c < aoa[r].length; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (ws[addr]) ws[addr].s = fill;
+    }
+  }
+}
+
 $('pnuDownloadBtn').addEventListener('click', () => {
   const used = new Set();
   const outNames = [];
@@ -1779,7 +1799,9 @@ $('pnuDownloadBtn').addEventListener('click', () => {
     const dName = doneSheetName(name, used, '_지번PNU');
     used.add(dName);
 
-    const ws = XLSX.utils.aoa_to_sheet(reorderForPnuOutput(s));
+    const aoa = reorderForPnuOutput(s);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    highlightMismatchRows(ws, aoa);
     const oldWs = workbook.Sheets[name];
     if (oldWs['!freeze']) ws['!freeze'] = oldWs['!freeze'];
 
@@ -1803,7 +1825,8 @@ $('pnuDownloadBtn').addEventListener('click', () => {
   outNames.push(sn);
   outSheets[sn] = XLSX.utils.aoa_to_sheet(summary);
 
-  XLSX.writeFile({ SheetNames: outNames, Sheets: outSheets }, originalBaseName + '_지번PNU.xlsx');
+  const writer = window.XLSXStyle || XLSX; // 색칠된 셀은 스타일 지원 라이브러리로 써야 실제로 저장된다
+  writer.writeFile({ SheetNames: outNames, Sheets: outSheets }, originalBaseName + '_지번PNU.xlsx');
 });
 
 })();
