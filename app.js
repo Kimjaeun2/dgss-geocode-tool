@@ -716,8 +716,11 @@ function writeRow(sheet, row, o) {
   }
 }
 
-/** 저장하는 X/Y(선택한 좌표계)로 WKT 점 geometry 문자열을 만든다. */
-function toWkt(x, y) { return `POINT(${x} ${y})`; }
+/** 저장하는 X/Y(선택한 좌표계)로 SRID 포함 EWKT 점 문자열을 만든다. 예: SRID=2097;POINT(x y) */
+function toWkt(x, y) {
+  const srid = String(targetCrs).replace(/^EPSG:/i, '');
+  return `SRID=${srid};POINT(${x} ${y})`;
+}
 
 /** 치환으로 확정된 결과를 사전에 등록한다. */
 function rememberInDict(address, o) {
