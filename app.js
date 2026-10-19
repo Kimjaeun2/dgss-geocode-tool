@@ -669,7 +669,7 @@ function prepareAllSheets() {
 
   const usable = enabledSheets().filter((s) => s.colIdx);
   if (usable.length === 0) {
-    alert(`선택한 시트에서 "${jibunName || roadName}" 컬럼을 찾지 못했습니다. 시트 선택이나 컬럼 지정을 확인해주세요.`);
+    alert(`선택한 시트에서 "${columnLabel(jibunName || roadName)}" 컬럼을 찾지 못했습니다. 시트 선택이나 컬럼 지정을 확인해주세요.`);
     return false;
   }
   if (skipped.length) {

@@ -97,30 +97,50 @@ function doneSheetName(base, used, suffix) {
   return name;
 }
 
-/** 시트에서 헤더 이름으로 컬럼을 찾고, 없으면 새로 만든다. */
-function findOrCreateColumn(sheet, name) {
+/* 컬럼은 시트 간 매칭을 위해 헤더 "이름"으로 식별한다. 그런데 제목이 비어 있는
+   컬럼("(제목없음)")은 이름이 ''라 "선택 안 함"과 구분이 안 됐다 — 그래서 제목이
+   없는 컬럼만 열 번호로 식별하는 키('__idx:3')를 대신 쓴다. */
+const IDX_KEY = '__idx:';
+
+/** 컬럼 키를 사람이 읽는 말로 바꾼다 (오류 메시지용). 제목없음 컬럼은 'D열'처럼 표시. */
+function columnLabel(name) {
+  if (name && name.indexOf(IDX_KEY) === 0) {
+    return XLSX.utils.encode_col(parseInt(name.slice(IDX_KEY.length), 10)) + '열(제목없음)';
+  }
+  return name;
+}
+
+/** 시트에서 컬럼 키(헤더 이름 또는 '__idx:N')로 컬럼을 찾는다. 없으면 -1. */
+function findColumn(sheet, name) {
+  if (!name) return -1;
   const header = sheet.aoa[0];
-  const idx = header.findIndex((h) => String(h).trim() === name);
+  if (name.indexOf(IDX_KEY) === 0) {
+    const i = parseInt(name.slice(IDX_KEY.length), 10);
+    return i >= 0 && i < header.length ? i : -1;
+  }
+  return header.findIndex((h) => String(h).trim() === name);
+}
+
+/** 시트에서 컬럼 키로 컬럼을 찾고, 없으면 새로 만든다. */
+function findOrCreateColumn(sheet, name) {
+  const idx = findColumn(sheet, name);
   if (idx >= 0) return idx;
+  const header = sheet.aoa[0];
   header.push(name);
   return header.length - 1;
 }
 
-/** 시트에서 헤더 이름으로 컬럼을 찾는다. 없으면 -1. */
-function findColumn(sheet, name) {
-  if (!name) return -1;
-  return sheet.aoa[0].findIndex((h) => String(h).trim() === name);
-}
-
-/** select 에서 고른 컬럼의 "이름"을 얻는다 (인덱스가 아니라 이름으로 시트 간 매칭) */
+/** select 에서 고른 컬럼의 키를 얻는다 (이름으로 시트 간 매칭, 제목없음은 열 번호) */
 function selectedColumnName(selectId, newNameId) {
   const val = $(selectId).value;
   if (val === '') return '';
   if (val === '__new__') return (newNameId && $(newNameId) ? $(newNameId).value.trim() : '');
   const base = baseSheet();
   if (!base) return '';
-  const h = base.aoa[0][parseInt(val, 10)];
-  return String(h == null ? '' : h).trim();
+  const i = parseInt(val, 10);
+  const h = base.aoa[0][i];
+  const name = String(h == null ? '' : h).trim();
+  return name !== '' ? name : IDX_KEY + i;
 }
 
 /**

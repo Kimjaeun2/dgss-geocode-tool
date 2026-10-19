@@ -194,7 +194,7 @@ function prepareAllSheetsForPnu() {
 
   const usable = enabledSheets().filter((s) => s.pnuColIdx);
   if (usable.length === 0) {
-    alert(`선택한 시트에서 "${roadName}" 컬럼을 찾지 못했습니다. 컬럼 지정을 확인해주세요.`);
+    alert(`선택한 시트에서 "${columnLabel(roadName)}" 컬럼을 찾지 못했습니다. 컬럼 지정을 확인해주세요.`);
     return false;
   }
   if (skipped.length) {
