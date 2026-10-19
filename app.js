@@ -257,6 +257,13 @@ function populateColumnSelects(header) {
   fill('colY', false, true);
   fill('insertAfterCol', true, false);
   $('insertAfterCol').options[0].textContent = '(기본값) 지번/도로명 주소 컬럼 바로 뒤';
+  // geom: 기존 컬럼 선택 또는 새 컬럼 직접 입력. 기본은 "(사용 안 함)".
+  fill('colGeom', true, true);
+  $('colGeom').options[0].textContent = '(사용 안 함)';
+  // 시트에 geom 컬럼이 이미 있으면 그 컬럼을 기본 선택한다.
+  autoGuess(header, 'colGeom', ['geom', 'GEOM', 'the_geom', 'wkt', 'WKT'], []);
+  $('colGeomNewName').value = 'geom';
+  toggleNewColInput('colGeom', 'colGeomNewName');
 
   autoGuess(header, 'colJibun', ['소재지(지번주소)', '지번주소'], ['지번주소']);
   autoGuess(header, 'colRoad', ['소재지(도로명주소)', '도로명주소'], ['도로명주소']);
@@ -630,6 +637,8 @@ function prepareAllSheets() {
   const xName = selectedColumnName('colX', 'colXNewName');
   const yName = selectedColumnName('colY', 'colYNewName');
   const insertAfterName = selectedColumnName('insertAfterCol', null); // '' 면 기본 동작
+  const geomName = selectedColumnName('colGeom', 'colGeomNewName');   // '' 면 geom 사용 안 함
+  const geomWanted = $('colGeom').value !== '';
 
   if (!jibunName && !roadName) {
     alert('지번주소 또는 도로명주소 컬럼 중 하나는 선택해야 합니다.'); return false;
@@ -639,6 +648,12 @@ function prepareAllSheets() {
   }
   if (xName === yName) {
     alert('X 컬럼과 Y 컬럼이 같습니다. 다르게 지정해주세요.'); return false;
+  }
+  if (geomWanted && !geomName) {
+    alert('geom 컬럼을 새로 만들려면 컬럼 이름을 입력해주세요.'); return false;
+  }
+  if (geomWanted && (geomName === xName || geomName === yName)) {
+    alert('geom 컬럼이 X 또는 Y 컬럼과 같습니다. 다르게 지정해주세요.'); return false;
   }
 
   const skipped = [];
@@ -662,6 +677,7 @@ function prepareAllSheets() {
       alt: findOrCreateColumn(s, COL_ALT),
       x: findOrCreateColumn(s, xName),
       y: findOrCreateColumn(s, yName),
+      geom: geomWanted ? findOrCreateColumn(s, geomName) : -1,
       jibunResult: findOrCreateColumn(s, COL_JIBUN),
       roadResult: findOrCreateColumn(s, COL_ROAD),
     };
@@ -690,6 +706,7 @@ function writeRow(sheet, row, o) {
   const proj = toOutputXY(o.lon, o.lat, o.crs);
   row[ci.x] = proj.x;
   row[ci.y] = proj.y;
+  if (ci.geom >= 0) row[ci.geom] = toWkt(proj.x, proj.y);
   if (o.jibun) row[ci.jibunResult] = o.jibun;
   if (o.road) row[ci.roadResult] = o.road;
 
@@ -698,6 +715,9 @@ function writeRow(sheet, row, o) {
     if (alt) row[ci.alt] = alt;
   }
 }
+
+/** 저장하는 X/Y(선택한 좌표계)로 WKT 점 geometry 문자열을 만든다. */
+function toWkt(x, y) { return `POINT(${x} ${y})`; }
 
 /** 치환으로 확정된 결과를 사전에 등록한다. */
 function rememberInDict(address, o) {
@@ -768,6 +788,8 @@ $('startBtn').addEventListener('click', async () => {
       // 이미 좌표가 "숫자로" 채워진 행은 건너뛴다 (주소 텍스트가 든 컬럼을 오인하지 않도록 숫자 검사)
       if (isNum(row[ci.x]) && isNum(row[ci.y])) {
         if (!row[ci.sojaeji]) row[ci.sojaeji] = addr;
+        // 기존 좌표를 그대로 두더라도 geom 칸이 비어 있으면 그 좌표로 채워준다.
+        if (ci.geom >= 0 && !row[ci.geom]) row[ci.geom] = toWkt(row[ci.x], row[ci.y]);
         skip++; sheet.stats.skip++; done++; tick();
         continue;
       }
@@ -1214,7 +1236,7 @@ function reorderForOutput(sheet) {
   const originalLen = ci.originalLen;
   const insertPoint = (ci.insertAfter >= 0 ? ci.insertAfter : Math.max(ci.jibun, ci.road)) + 1;
 
-  const candidates = [ci.sojaeji, ci.locx, ci.alt, ci.x, ci.y, ci.jibunResult, ci.roadResult];
+  const candidates = [ci.sojaeji, ci.locx, ci.alt, ci.x, ci.y, ci.geom, ci.jibunResult, ci.roadResult];
   const newCols = candidates.filter((idx) => idx >= originalLen);
 
   const order = [];
