@@ -841,7 +841,7 @@ $('startBtn').addEventListener('click', async () => {
 
 function updateProgress(done, total, ok, place, dict, fail, skip) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  $('progressFill').style.width = pct + '%';
+  $('progressFill').style.transform = `scaleX(${pct / 100})`;
   $('progressText').textContent = `${done} / ${total}`;
   $('cntOk').textContent = ok;
   $('cntPlace').textContent = place;

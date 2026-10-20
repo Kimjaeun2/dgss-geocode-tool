@@ -280,7 +280,7 @@ $('qgRun').addEventListener('click', async () => {
 $('qgStop').addEventListener('click', () => { stopRequested = true; });
 
 function renderProgress(done, total) {
-  $('qgFill').style.width = total ? (done / total * 100) + '%' : '0%';
+  $('qgFill').style.transform = `scaleX(${total ? done / total : 0})`;
   $('qgProgressText').textContent = `${done} / ${total}`;
 }
 

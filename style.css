@@ -230,7 +230,7 @@ button + button { margin-left: 8px; }
    ========================================================================== */
 .progress-wrap { display: flex; align-items: center; gap: 14px; }
 .progress-bar { flex: 1; height: 10px; background: var(--border); border-radius: 999px; overflow: hidden; }
-#progressFill { height: 100%; width: 0%; background: var(--success); transition: width 0.2s ease; }
+#progressFill, .qg-fill { height: 100%; background: var(--success); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease; }
 .summary { margin-top: 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .summary .ok { color: var(--success); font-weight: 600; }
 .summary .place { color: var(--purple); font-weight: 600; }
@@ -341,7 +341,6 @@ button + button { margin-left: 8px; }
 .qg-table button { white-space: nowrap; }
 
 button.big { padding: 12px 26px; font-size: 15px; margin-top: 12px; }
-.qg-fill { height: 100%; width: 0%; background: var(--success); transition: width 0.2s ease; }
 .qg-after { margin-top: 10px; }
 .qg-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin: 0 3px 0 2px; border: 1px solid var(--border-strong); }
 .qg-swatch.fail, .qg-level.fail { background: #ffc9c9; }
