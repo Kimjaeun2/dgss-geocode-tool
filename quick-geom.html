@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>간편 geom 만들기</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="style.css">
+<!-- 엑셀 읽기 (커뮤니티판) + 서식 유지 쓰기 (xlsx-js-style → window.XLSXStyle). address-match.html 과 같은 방식 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>window.__XLSX_COMMUNITY = window.XLSX;</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+  window.XLSXStyle = (window.XLSX !== window.__XLSX_COMMUNITY) ? window.XLSX : null;
+  window.XLSX = window.__XLSX_COMMUNITY;
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="src/crs.js"></script>
+<!-- 카카오맵 JS SDK (서비스 도메인이 카카오 디벨로퍼스에 등록돼 있어야 함) -->
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=e15236035f91c232bbfe80eb5d65e417&libraries=services"></script>
+<script src="src/address.js"></script>
+<script src="src/gate.js"></script>
+<script src="src/quickgeo.js"></script>
+</head>
+<body>
+<header>
+  <h1>간편 geom 만들기</h1>
+  <p class="sub">엑셀을 넣으면 주소를 찾아 좌표(geom)를 만들어 줍니다. 원본 엑셀은 그대로 두고 맨 뒤에 결과 열만 붙입니다.</p>
+</header>
+
+<nav class="app-switch" aria-label="시스템 선택">
+  <a href="quick-geom.html" class="active">⚡ 간편 geom 만들기</a>
+  <a href="index.html">📍 주소 지오코딩 (상세)</a>
+  <a href="address-match.html">🔎 도로명 → 지번/PNU 매칭</a>
+</nav>
+
+<main>
+  <!-- 1. 파일 -->
+  <section class="card" id="qgUpload">
+    <h2><span class="step-badge">1</span> 엑셀 파일 넣기</h2>
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <strong>여기로 엑셀을 끌어다 놓거나 클릭하세요</strong>
+      <span>제목줄 위치와 주소 열은 자동으로 찾습니다</span>
+    </label>
+    <div id="uploadStatus" class="status"></div>
+  </section>
+
+  <!-- 2. 자동 인식 확인 -->
+  <section class="card hidden" id="qgCheck">
+    <h2><span class="step-badge">2</span> 자동으로 찾은 설정 확인</h2>
+    <p class="hint">틀린 것만 바꾸세요. 대부분은 그대로 두고 아래 버튼만 누르면 됩니다.</p>
+    <div class="qg-grid">
+      <div class="field" id="qgSheetField">
+        <label for="qgSheet">시트</label>
+        <select id="qgSheet"></select>
+      </div>
+      <div class="field">
+        <label for="qgHeaderRow">제목줄 (몇 번째 행)</label>
+        <input type="text" id="qgHeaderRow" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="qgAddr">주소 열</label>
+        <select id="qgAddr"></select>
+      </div>
+      <div class="field">
+        <label for="qgAddr2">보조 주소 열 <span class="badge">주소로 못 찾으면 사용</span></label>
+        <select id="qgAddr2"></select>
+      </div>
+      <div class="field">
+        <label for="qgName">장소명 열 <span class="badge">주소로 못 찾으면 이름으로 검색</span></label>
+        <select id="qgName"></select>
+      </div>
+      <div class="field">
+        <label for="qgRegion">지역 <span class="badge">시·군이 빠진 주소 앞에 붙임</span></label>
+        <input type="text" id="qgRegion" placeholder="예: 경북 울진군">
+      </div>
+      <div class="field">
+        <label for="qgCrs">좌표계 (SRID)</label>
+        <select id="qgCrs"></select>
+      </div>
+    </div>
+
+    <div class="qg-table-wrap">
+      <table class="qg-table" id="qgPreview"></table>
+    </div>
+    <div id="qgCheckNote" class="status"></div>
+    <button id="qgRun" class="big">📍 좌표 만들기</button>
+  </section>
+
+  <!-- 3. 결과 -->
+  <section class="card hidden" id="qgResult">
+    <h2><span class="step-badge">3</span> 결과 확인 · 다운로드</h2>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div id="qgFill" class="qg-fill"></div></div>
+      <span id="qgProgressText" class="status">0 / 0</span>
+      <button id="qgStop" class="danger">중지</button>
+    </div>
+    <div id="qgWarn" class="status warn hidden"></div>
+    <div class="summary" id="qgSummary"></div>
+
+    <div id="qgDone" class="hidden">
+      <button id="qgDownload" class="big">⬇ 엑셀 다운로드</button>
+      <p class="hint qg-after">원본 시트 맨 뒤에 <b>geom</b>(EWKT) · <b>좌표결과</b> · <b>찾은주소</b> 열이 붙습니다.
+        결과 칸은 <span class="qg-swatch fail"></span>실패 · <span class="qg-swatch guess"></span>추정 색으로 표시됩니다.</p>
+
+      <div id="qgIssuesWrap" class="hidden">
+        <h3>확인이 필요한 행 <span id="qgIssuesBadge" class="badge"></span></h3>
+        <p class="hint">주소를 고쳐 쓰거나 장소 이름을 넣고 <b>다시 찾기</b>를 누르세요. "추정"은 장소 이름으로 찾은 것이라 위치가 맞는지 한 번 확인하세요.</p>
+        <div class="qg-table-wrap">
+          <table class="qg-table" id="qgIssues"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="src/core.js"></script>
+<script src="quick-geom.js"></script>
+</body>
+</html>

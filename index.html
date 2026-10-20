@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- 좌표계 변환 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="src/crs.js"></script>
 <!--
   카카오맵 JS SDK
   주의 1: appkey 를 카카오 디벨로퍼스에서 발급받은 "JavaScript 키"로 교체하세요.
@@ -39,9 +40,10 @@
   <p class="sub">엑셀 업로드 → 주소검색·장소검색 자동 지오코딩 → 남은 건은 지도에서 보정 → 엑셀 다운로드</p>
 </header>
 
-<!-- 시스템 전환 메뉴: 지오코딩 / 도로명-지번 매칭은 이제 완전히 분리된 두 페이지다. -->
+<!-- 시스템 전환 메뉴: 세 기능은 완전히 분리된 페이지다. -->
 <nav class="app-switch" aria-label="시스템 선택">
-  <a href="index.html" class="active">📍 주소 지오코딩</a>
+  <a href="quick-geom.html">⚡ 간편 geom 만들기</a>
+  <a href="index.html" class="active">📍 주소 지오코딩 (상세)</a>
   <a href="address-match.html">🔎 도로명 → 지번/PNU 매칭</a>
 </nav>
 
@@ -84,6 +86,11 @@
         <label>결과 Y 컬럼</label>
         <select id="colY"></select>
         <input type="text" id="colYNewName" class="hidden" placeholder="새 컬럼 이름 (예: Y)">
+      </div>
+      <div class="field">
+        <label>geom 컬럼 <span class="badge">선택 — SRID 포함 EWKT로 기록 (예: SRID=2097;POINT(x y))</span></label>
+        <select id="colGeom"></select>
+        <input type="text" id="colGeomNewName" class="hidden" placeholder="새 컬럼 이름 (예: geom)">
       </div>
       <div class="field">
         <label>결과 컬럼을 삽입할 위치</label>
